@@ -6,12 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shuyo/data/models/academic_schedule.dart';
 import 'package:shuyo/data/repositories/academic_schedule_repository.dart';
-import 'package:shuyo/data/repositories/client_backend_repository.dart';
 import 'package:shuyo/data/services/academic_auth_service.dart';
 import 'package:shuyo/data/services/academic_schedule_api_client.dart';
 import 'package:shuyo/data/services/academic_schedule_notification_service.dart';
-import 'package:shuyo/data/services/client_settings_service.dart';
-import 'package:shuyo/features/settings/client_settings_page.dart';
+import 'package:shuyo/data/services/academic_schedule_widget_service.dart';
+import 'package:shuyo/features/home/academic_schedule_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -112,7 +111,7 @@ void main() {
     expect(saved.leadMinutes, 30);
   });
 
-  testWidgets('iOS 26 settings request AlarmKit permission when enabled',
+  testWidgets('iOS 26 schedule settings request AlarmKit permission when saved',
       (tester) async {
     try {
       final repository = AcademicScheduleRepository(
@@ -122,20 +121,26 @@ void main() {
         repository: repository,
         alarmChannel: channel,
       );
+      await repository.saveCachedSchedule(_schedule);
+      final initialState = await repository.loadCachedState(
+        now: DateTime(2026, 8, 31),
+      );
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ClientSettingsPage(
-            settingsService: ClientSettingsService(),
-            scheduleNotificationService: alarmService,
-            backendRepository: ClientBackendRepository(),
-            selectedThemeId: 'default',
-            followSystemTheme: false,
-            onThemeChanged: (_) async {},
-            onFollowSystemThemeChanged: (_) async {},
+          home: AcademicSchedulePage(
+            repository: repository,
+            notificationService: alarmService,
+            widgetService: AcademicScheduleWidgetService(
+              repository: repository,
+            ),
+            onLoginRequired: () async {},
+            initialState: initialState,
           ),
         ),
       );
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('通知设置'));
       await tester.pumpAndSettle();
 
@@ -145,23 +150,20 @@ void main() {
       await tester.tap(find.text('早课闹钟'));
       await tester.pumpAndSettle();
 
-      expect(methodCalls, contains('requestAuthorization'));
       expect(find.text('闹钟提前时间'), findsOneWidget);
       expect(find.text('20 分钟'), findsOneWidget);
 
-      await tester.tap(find.text('闹钟提前时间'));
+      await tester.tap(find.text('20 分钟'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('30 分钟').last);
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-
-      await tester.tap(find.text('闹钟提前时间'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextFormField), '30');
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
+
       expect(tester.takeException(), isNull);
-      expect(find.text('30 分钟'), findsOneWidget);
+      expect(methodCalls, contains('requestAuthorization'));
+      expect(find.textContaining('早课闹钟已开启，提前 30 分钟响铃'),
+          findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

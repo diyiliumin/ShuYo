@@ -46,6 +46,8 @@ void main() {
     expect(find.text('退出上大校园账户'), findsNothing);
     expect(find.text('问题与反馈'), findsNothing);
     expect(find.text('检查更新'), findsNothing);
+    expect(find.text('通知设置'), findsNothing);
+    expect(find.text('课表提醒'), findsNothing);
     expect(find.text('关于ShuYo'), findsOneWidget);
   });
 
