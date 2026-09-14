@@ -20,6 +20,9 @@ const _scheduleCellInset = 2.5;
 const _scheduleCourseInset = 2.5;
 const _scheduleCellRadius = 4.0;
 const _scheduleCourseRadius = 5.0;
+const _nonCurrentWeekCourseFill = Color(0xFFBDBDBD);
+const _nonCurrentWeekCourseText = Color(0xFFFFFFFF);
+const _nonCurrentWeekCourseMetaText = Color(0xD9FFFFFF);
 
 class AcademicSchedulePage extends StatefulWidget {
   const AcademicSchedulePage({
@@ -1211,12 +1214,14 @@ class _DisplaySettingsSheet extends StatefulWidget {
 class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
   late bool _colorful;
   late bool _showTeacher;
+  late bool _showNonCurrentWeekCourses;
 
   @override
   void initState() {
     super.initState();
     _colorful = widget.initial.colorful;
     _showTeacher = widget.initial.showTeacher;
+    _showNonCurrentWeekCourses = widget.initial.showNonCurrentWeekCourses;
   }
 
   @override
@@ -1249,14 +1254,20 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
               ),
             ),
             SwitchListTile(
-              title: const Text('多彩显示'),
+              title: const _DisplaySettingTitle('多彩显示'),
               value: _colorful,
               onChanged: (value) => setState(() => _colorful = value),
             ),
             SwitchListTile(
-              title: const Text('显示教师'),
+              title: const _DisplaySettingTitle('显示教师'),
               value: _showTeacher,
               onChanged: (value) => setState(() => _showTeacher = value),
+            ),
+            SwitchListTile(
+              title: const _DisplaySettingTitle('显示非本周课程'),
+              value: _showNonCurrentWeekCourses,
+              onChanged: (value) =>
+                  setState(() => _showNonCurrentWeekCourses = value),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
@@ -1274,6 +1285,7 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
                     AcademicScheduleDisplaySettings(
                       colorful: _colorful,
                       showTeacher: _showTeacher,
+                      showNonCurrentWeekCourses: _showNonCurrentWeekCourses,
                     ),
                   ),
                   child: const Text('完成'),
@@ -1283,6 +1295,20 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DisplaySettingTitle extends StatelessWidget {
+  const _DisplaySettingTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.translate(
+      offset: const Offset(0, 4.5),
+      child: Text(text),
     );
   }
 }
@@ -2075,6 +2101,38 @@ class _ManualCourseSheetState extends State<_ManualCourseSheet> {
   }
 }
 
+List<CourseSession> _sessionsIncludingNonCurrentWeek(
+  AcademicSchedule schedule,
+  int displayedWeek,
+  List<CourseSession> currentWeekSessions,
+) {
+  final nonCurrentWeekSessions = schedule.sessions.where((session) {
+    if (session.occursInWeek(displayedWeek)) {
+      return false;
+    }
+    return !currentWeekSessions.any(
+      (current) =>
+          current.weekday == session.weekday &&
+          _sectionRangesOverlap(
+            current.startSection,
+            current.endSection,
+            session.startSection,
+            session.endSection,
+          ),
+    );
+  }).toList()
+    ..sort((a, b) {
+      final weekday = a.weekday.compareTo(b.weekday);
+      return weekday != 0
+          ? weekday
+          : a.startSection.compareTo(b.startSection);
+    });
+
+  // Current-week courses are painted last as an additional safeguard so they
+  // always win if future layout rules allow overlapping blocks.
+  return [...nonCurrentWeekSessions, ...currentWeekSessions];
+}
+
 class _ScheduleBody extends StatelessWidget {
   const _ScheduleBody({
     required this.schedule,
@@ -2106,7 +2164,14 @@ class _ScheduleBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = schedule.sessionsForWeek(displayedWeek);
+    final currentWeekSessions = schedule.sessionsForWeek(displayedWeek);
+    final sessions = displaySettings.showNonCurrentWeekCourses
+        ? _sessionsIncludingNonCurrentWeek(
+            schedule,
+            displayedWeek,
+            currentWeekSessions,
+          )
+        : currentWeekSessions;
     final untimed = schedule.untimedForWeek(displayedWeek);
     const weekdays = [1, 2, 3, 4, 5, 6, 7];
 
@@ -2493,7 +2558,9 @@ class _ScheduleGrid extends StatelessWidget {
                             _rowHeight -
                         _scheduleCourseInset * 2,
                     child: _CourseBlock(
+                      key: ValueKey('schedule-course-${session.id}'),
                       session: session,
+                      isCurrentWeek: session.occursInWeek(displayedWeek),
                       displaySettings: displaySettings,
                       courseColorValues: courseColorValues,
                       onTap: () => onCourseTap(session),
@@ -2715,13 +2782,16 @@ class _SectionLabel extends StatelessWidget {
 
 class _CourseBlock extends StatelessWidget {
   const _CourseBlock({
+    super.key,
     required this.session,
+    required this.isCurrentWeek,
     required this.displaySettings,
     required this.courseColorValues,
     required this.onTap,
   });
 
   final CourseSession session;
+  final bool isCurrentWeek;
   final AcademicScheduleDisplaySettings displaySettings;
   final Map<String, int> courseColorValues;
   final VoidCallback onTap;
@@ -2729,17 +2799,23 @@ class _CourseBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.shuyoColors;
-    final fillColor = displaySettings.colorful
-        ? (courseColorValues[_courseColorSeed(session)] == null
-            ? _courseColorForSession(context, session)
-            : Color(courseColorValues[_courseColorSeed(session)]!))
-        : colors.scheduleCourseFill;
-    final courseTextColor = displaySettings.colorful
-        ? const Color(0xFFFFFFFF)
-        : colors.scheduleCourseText;
-    final metaTextColor = displaySettings.colorful
-        ? const Color(0xD9FFFFFF)
-        : colors.scheduleCourseMetaText;
+    final fillColor = !isCurrentWeek
+        ? _nonCurrentWeekCourseFill
+        : displaySettings.colorful
+            ? (courseColorValues[_courseColorSeed(session)] == null
+                ? _courseColorForSession(context, session)
+                : Color(courseColorValues[_courseColorSeed(session)]!))
+            : colors.scheduleCourseFill;
+    final courseTextColor = !isCurrentWeek
+        ? _nonCurrentWeekCourseText
+        : displaySettings.colorful
+            ? const Color(0xFFFFFFFF)
+            : colors.scheduleCourseText;
+    final metaTextColor = !isCurrentWeek
+        ? _nonCurrentWeekCourseMetaText
+        : displaySettings.colorful
+            ? const Color(0xD9FFFFFF)
+            : colors.scheduleCourseMetaText;
     return Material(
       color: fillColor,
       borderRadius: BorderRadius.circular(_scheduleCourseRadius),

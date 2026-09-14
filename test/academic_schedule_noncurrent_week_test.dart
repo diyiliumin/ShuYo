@@ -1,0 +1,126 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shuyo/data/models/academic_schedule.dart';
+import 'package:shuyo/data/repositories/academic_schedule_repository.dart';
+import 'package:shuyo/data/services/academic_schedule_display_settings_service.dart';
+import 'package:shuyo/data/services/academic_schedule_notification_service.dart';
+import 'package:shuyo/data/services/academic_schedule_widget_service.dart';
+import 'package:shuyo/features/home/academic_schedule_page.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+      'shows non-current-week courses unless a current course occupies the slot',
+      (tester) async {
+    final repository = AcademicScheduleRepository();
+    final state = AcademicScheduleCacheState(
+      schedule: _schedule,
+      weekState: ScheduleWeekState(
+        currentWeek: 1,
+        anchorMonday: AcademicScheduleRepository.startOfWeek(DateTime.now()),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AcademicSchedulePage(
+          repository: repository,
+          notificationService:
+              AcademicScheduleNotificationService(repository: repository),
+          widgetService: AcademicScheduleWidgetService(repository: repository),
+          onLoginRequired: () async {},
+          initialState: state,
+          initialDisplayState: const AcademicScheduleDisplayState(
+            settings: AcademicScheduleDisplaySettings(
+              colorful: true,
+              showTeacher: false,
+            ),
+            courseColorValues: {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('本周课程'), findsOneWidget);
+    expect(find.text('下周课程'), findsOneWidget);
+    expect(find.text('被本周课程覆盖'), findsNothing);
+    final nonCurrentBlock = find.byKey(
+      const ValueKey('schedule-course-next'),
+    );
+    expect(nonCurrentBlock, findsOneWidget);
+    final nonCurrentMaterial = tester.widget<Material>(
+      find.descendant(of: nonCurrentBlock, matching: find.byType(Material)),
+    );
+    expect(
+      nonCurrentMaterial.color,
+      const Color(0xFFBDBDBD),
+    );
+
+    await tester.tap(find.text('下周课程'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('显示设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('显示非本周课程'), findsOneWidget);
+    await tester.tap(find.text('显示非本周课程'));
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('本周课程'), findsOneWidget);
+    expect(find.text('下周课程'), findsNothing);
+  });
+}
+
+CourseSession _session({
+  required String id,
+  required String name,
+  required int weekday,
+  required List<int> weeks,
+}) {
+  return CourseSession(
+    id: id,
+    courseName: name,
+    courseCode: id,
+    teacherName: '',
+    campus: '',
+    location: '',
+    weekday: weekday,
+    startSection: 1,
+    endSection: 2,
+    sections: const [1, 2],
+    weeks: weeks,
+    weekText: weeks.join(','),
+    credit: '',
+    note: '',
+  );
+}
+
+final _schedule = AcademicSchedule(
+  term: const AcademicTerm(
+    yearCode: '2026',
+    termCode: '3',
+    academicYearName: '2026-2027',
+    termName: '秋',
+    studentName: '',
+    studentId: '',
+    className: '',
+  ),
+  sessions: [
+    _session(id: 'current', name: '本周课程', weekday: 1, weeks: const [1]),
+    _session(id: 'covered', name: '被本周课程覆盖', weekday: 1, weeks: const [2]),
+    _session(id: 'next', name: '下周课程', weekday: 2, weeks: const [2]),
+  ],
+  untimedCourses: const [],
+  fetchedAt: DateTime(2026, 8, 31),
+);

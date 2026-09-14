@@ -9,13 +9,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('schedule display settings default to disabled', () async {
+  test('schedule display settings use expected defaults', () async {
     final service = AcademicScheduleDisplaySettingsService();
 
     final settings = await service.loadSettings();
 
     expect(settings.colorful, isFalse);
     expect(settings.showTeacher, isFalse);
+    expect(settings.showNonCurrentWeekCourses, isTrue);
   });
 
   test('schedule display settings are persisted', () async {
@@ -25,12 +26,14 @@ void main() {
       const AcademicScheduleDisplaySettings(
         colorful: true,
         showTeacher: true,
+        showNonCurrentWeekCourses: false,
       ),
     );
     final settings = await service.loadSettings();
 
     expect(settings.colorful, isTrue);
     expect(settings.showTeacher, isTrue);
+    expect(settings.showNonCurrentWeekCourses, isFalse);
   });
 
   test('custom course colors are persisted by course identity', () async {
