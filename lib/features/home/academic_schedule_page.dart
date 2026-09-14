@@ -947,28 +947,48 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
 
   Future<void> _openNotificationSettings() async {
     final initial = await widget.notificationService.loadSettings();
+    final alarmsSupported =
+        await widget.notificationService.supportsEarlyClassAlarms();
+    final alarmInitial = alarmsSupported
+        ? await widget.notificationService.loadAlarmSettings()
+        : const AcademicScheduleAlarmSettings(enabled: false, leadMinutes: 20);
     if (!mounted) {
       return;
     }
     final next =
-        await showModalBottomSheet<AcademicScheduleNotificationSettings>(
+        await showModalBottomSheet<_ScheduleNotificationSettingsResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _NotificationSettingsSheet(initial: initial),
+      builder: (context) => _NotificationSettingsSheet(
+        initial: initial,
+        alarmsSupported: alarmsSupported,
+        alarmInitial: alarmInitial,
+      ),
     );
     if (!mounted || next == null) {
       return;
     }
     final saved = await widget.notificationService.saveSettingsAndSync(
-      next,
-      requestPermission: next.enabled,
+      next.regular,
+      requestPermission: next.regular.enabled,
     );
+    AcademicScheduleAlarmSettings? savedAlarm;
+    if (next.alarm != null) {
+      savedAlarm = await widget.notificationService.saveAlarmSettingsAndSync(
+        next.alarm!,
+        requestPermission: next.alarm!.enabled,
+      );
+    }
     if (!mounted) {
       return;
     }
-    if (next.enabled && !saved.enabled) {
+    if (next.regular.enabled && !saved.enabled) {
       _showSnack('系统通知或精确提醒权限未开启，课程提醒已关闭');
+      return;
+    }
+    if (next.alarm?.enabled == true && savedAlarm?.enabled != true) {
+      _showSnack('未获得闹钟权限，早课闹钟已关闭');
       return;
     }
     _showSnack(
@@ -1427,10 +1447,26 @@ String _formatWeekText(List<int> weeks) {
   return ranges.join(',');
 }
 
+class _ScheduleNotificationSettingsResult {
+  const _ScheduleNotificationSettingsResult({
+    required this.regular,
+    required this.alarm,
+  });
+
+  final AcademicScheduleNotificationSettings regular;
+  final AcademicScheduleAlarmSettings? alarm;
+}
+
 class _NotificationSettingsSheet extends StatefulWidget {
-  const _NotificationSettingsSheet({required this.initial});
+  const _NotificationSettingsSheet({
+    required this.initial,
+    required this.alarmsSupported,
+    required this.alarmInitial,
+  });
 
   final AcademicScheduleNotificationSettings initial;
+  final bool alarmsSupported;
+  final AcademicScheduleAlarmSettings alarmInitial;
 
   @override
   State<_NotificationSettingsSheet> createState() =>
@@ -1441,12 +1477,16 @@ class _NotificationSettingsSheetState
     extends State<_NotificationSettingsSheet> {
   late bool _enabled;
   late int _leadMinutes;
+  late bool _alarmEnabled;
+  late int _alarmLeadMinutes;
 
   @override
   void initState() {
     super.initState();
     _enabled = widget.initial.enabled;
     _leadMinutes = widget.initial.leadMinutes;
+    _alarmEnabled = widget.alarmInitial.enabled;
+    _alarmLeadMinutes = widget.alarmInitial.leadMinutes;
   }
 
   @override
@@ -1544,15 +1584,51 @@ class _NotificationSettingsSheetState
                 },
               ),
             ],
+            if (widget.alarmsSupported) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('早课闹钟'),
+                value: _alarmEnabled,
+                onChanged: (value) => setState(() => _alarmEnabled = value),
+              ),
+              if (_alarmEnabled)
+                DropdownButtonFormField<int>(
+                  initialValue: _alarmLeadMinutes,
+                  decoration: const InputDecoration(
+                    labelText: '闹钟提前时间',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final value in minuteOptions)
+                      DropdownMenuItem(
+                        value: value,
+                        child: Text('$value 分钟'),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _alarmLeadMinutes = value);
+                    }
+                  },
+                ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
                 onPressed: () {
                   Navigator.of(context).pop(
-                    AcademicScheduleNotificationSettings(
-                      enabled: _enabled,
-                      leadMinutes: _leadMinutes,
+                    _ScheduleNotificationSettingsResult(
+                      regular: AcademicScheduleNotificationSettings(
+                        enabled: _enabled,
+                        leadMinutes: _leadMinutes,
+                      ),
+                      alarm: widget.alarmsSupported
+                          ? AcademicScheduleAlarmSettings(
+                              enabled: _alarmEnabled,
+                              leadMinutes: _alarmLeadMinutes,
+                            )
+                          : null,
                     ),
                   );
                 },

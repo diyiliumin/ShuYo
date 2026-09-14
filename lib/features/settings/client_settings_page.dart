@@ -61,17 +61,6 @@ class ClientSettingsPage extends StatelessWidget {
       body: ListView(
         children: [
           _SettingsRow(
-            title: '通知设置',
-            onTap: () => Navigator.of(context).push<void>(
-              shuyoRoute(
-                builder: (context) => _NotificationSettingsPage(
-                  settingsService: settingsService,
-                  scheduleNotificationService: scheduleNotificationService,
-                ),
-              ),
-            ),
-          ),
-          _SettingsRow(
             title: '主题切换',
             onTap: () => Navigator.of(context).push<void>(
               shuyoRoute(

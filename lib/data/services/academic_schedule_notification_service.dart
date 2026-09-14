@@ -7,7 +7,6 @@ import 'package:timezone/timezone.dart' as timezone;
 
 import '../models/academic_schedule.dart';
 import '../repositories/academic_schedule_repository.dart';
-import 'client_settings_service.dart';
 
 class AcademicScheduleNotificationSettings {
   const AcademicScheduleNotificationSettings({
@@ -208,13 +207,6 @@ class AcademicScheduleNotificationService {
     }
     await _ensureInitialized();
     await _cancelCourseReminders();
-
-    final clientSettings = await ClientSettingsService(
-      preferencesLoader: _preferencesLoader,
-    ).loadNotificationSettings();
-    if (!clientSettings.scheduleEnabled) {
-      return 0;
-    }
 
     final settings = await loadSettings();
     if (!settings.enabled) {
