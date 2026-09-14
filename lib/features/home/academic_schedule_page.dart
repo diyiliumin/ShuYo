@@ -93,7 +93,29 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_schedule?.term.displayName ?? '课表'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_schedule?.term.displayName ?? '课表'),
+            Transform.translate(
+              offset: const Offset(-3, -0.5),
+              child: Opacity(
+                opacity: 0.65,
+                child: IconButton(
+                  tooltip: '课表信息说明',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  onPressed: _showScheduleDataInfo,
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: '设置开学日期',
@@ -995,6 +1017,24 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
     );
   }
 
+  Future<void> _showScheduleDataInfo() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('课表信息说明'),
+        content: const Text(
+          '应用每次获取的课表信息为当时教务系统中数据，并非实时更新\n\n因此当发生课程变更、教室变更等情况，需手动进行刷新',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _notificationSettingsSaveMessage({
     required AcademicScheduleNotificationSettings initialRegular,
     required AcademicScheduleNotificationSettings requestedRegular,
@@ -1581,16 +1621,19 @@ class _NotificationSettingsSheetState
                   const Text('课程开始前提醒'),
                   Transform.translate(
                     offset: const Offset(-3, -1),
-                    child: IconButton(
-                      tooltip: '提醒说明',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 26,
-                        minHeight: 26,
+                    child: Opacity(
+                      opacity: 0.65,
+                      child: IconButton(
+                        tooltip: '提醒说明',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 26,
+                          minHeight: 26,
+                        ),
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        onPressed: () => _showReminderLimitInfo(context),
                       ),
-                      icon: const Icon(Icons.info_outline, size: 18),
-                      onPressed: () => _showReminderLimitInfo(context),
                     ),
                   ),
                 ],
