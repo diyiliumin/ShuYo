@@ -1499,32 +1499,51 @@ class _NotificationSettingsSheetState
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('课程开始前提醒'),
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('课程开始前提醒'),
+                  Transform.translate(
+                    offset: const Offset(-3, -1),
+                    child: IconButton(
+                      tooltip: '提醒说明',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 26,
+                        minHeight: 26,
+                      ),
+                      icon: const Icon(Icons.info_outline, size: 18),
+                      onPressed: () => _showReminderLimitInfo(context),
+                    ),
+                  ),
+                ],
+              ),
               value: _enabled,
               onChanged: (value) => setState(() => _enabled = value),
             ),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<int>(
-              initialValue: _leadMinutes,
-              decoration: const InputDecoration(
-                labelText: '提前多久提醒',
-                border: OutlineInputBorder(),
+            if (_enabled) ...[
+              const SizedBox(height: 6),
+              DropdownButtonFormField<int>(
+                initialValue: _leadMinutes,
+                decoration: const InputDecoration(
+                  labelText: '提前多久提醒',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final value in minuteOptions)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text('$value 分钟'),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _leadMinutes = value);
+                  }
+                },
               ),
-              items: [
-                for (final value in minuteOptions)
-                  DropdownMenuItem(
-                    value: value,
-                    child: Text('$value 分钟'),
-                  ),
-              ],
-              onChanged: _enabled
-                  ? (value) {
-                      if (value != null) {
-                        setState(() => _leadMinutes = value);
-                      }
-                    }
-                  : null,
-            ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -1542,6 +1561,24 @@ class _NotificationSettingsSheetState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showReminderLimitInfo(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('课程提醒说明'),
+        content: const Text(
+          '系统最多同时保留 64 条最近的课程提醒。打开 ShuYo 后，应用会自动补充后续提醒。\n\n因此记得时不时上线一下哦~',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
       ),
     );
   }

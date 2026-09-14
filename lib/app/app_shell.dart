@@ -553,6 +553,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Future<void> _refreshAfterAppResumed() async {
     unawaited(_refreshScheduleSummaryQuietly());
+    unawaited(_scheduleNotificationService.syncScheduleReminders());
     final lastStatusAttempt = _lastWebVpnStatusFetchAttempt;
     if (lastStatusAttempt == null ||
         DateTime.now().difference(lastStatusAttempt) >=
