@@ -7,6 +7,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import io.flutter.embedding.engine.FlutterEngine
@@ -52,6 +53,28 @@ class MainActivity : FlutterActivity() {
                 "setEmojiRecents" -> {
                     saveEmojiRecents(call.argument("shortcodes"))
                     result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "work.shuyo.app/early_class_alarms"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isAvailable" -> result.success(EarlyClassAlarmScheduler.isAvailable(this))
+                "requestAuthorization" -> {
+                    val manager = getSystemService(android.app.AlarmManager::class.java)
+                    val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        manager.canScheduleExactAlarms()
+                    if (!allowed) {
+                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                    }
+                    result.success(allowed)
+                }
+                "sync" -> {
+                    val alarms = call.argument<List<Map<String, Any?>>>("alarms") ?: emptyList()
+                    result.success(EarlyClassAlarmScheduler.sync(this, alarms))
                 }
                 else -> result.notImplemented()
             }

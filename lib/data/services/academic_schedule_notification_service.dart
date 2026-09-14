@@ -88,7 +88,7 @@ class AcademicScheduleNotificationService {
   ) async {
     final prefs = await _preferencesLoader();
     final normalized = settings.copyWith(
-      leadMinutes: settings.leadMinutes.clamp(1, 120),
+      leadMinutes: settings.leadMinutes.clamp(15, 120),
     );
     await prefs.setBool(_enabledKey, normalized.enabled);
     await prefs.setInt(_leadMinutesKey, normalized.leadMinutes);
@@ -116,7 +116,7 @@ class AcademicScheduleNotificationService {
   }
 
   Future<bool> supportsEarlyClassAlarms() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+    if (kIsWeb) {
       return false;
     }
     try {
@@ -141,7 +141,7 @@ class AcademicScheduleNotificationService {
   ) async {
     final prefs = await _preferencesLoader();
     final normalized = settings.copyWith(
-      leadMinutes: settings.leadMinutes.clamp(1, 120),
+      leadMinutes: settings.leadMinutes.clamp(15, 120),
     );
     await prefs.setBool(_alarmEnabledKey, normalized.enabled);
     await prefs.setInt(_alarmLeadMinutesKey, normalized.leadMinutes);

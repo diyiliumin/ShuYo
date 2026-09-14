@@ -983,17 +983,54 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
     if (!mounted) {
       return;
     }
-    if (next.regular.enabled && !saved.enabled) {
-      _showSnack('系统通知或精确提醒权限未开启，课程提醒已关闭');
-      return;
-    }
-    if (next.alarm?.enabled == true && savedAlarm?.enabled != true) {
-      _showSnack('未获得闹钟权限，早课闹钟已关闭');
-      return;
-    }
     _showSnack(
-      saved.enabled ? '课程提醒已开启，提前 ${saved.leadMinutes} 分钟' : '课程提醒已关闭',
+      _notificationSettingsSaveMessage(
+        initialRegular: initial,
+        requestedRegular: next.regular,
+        savedRegular: saved,
+        initialAlarm: alarmsSupported ? alarmInitial : null,
+        requestedAlarm: next.alarm,
+        savedAlarm: savedAlarm,
+      ),
     );
+  }
+
+  String _notificationSettingsSaveMessage({
+    required AcademicScheduleNotificationSettings initialRegular,
+    required AcademicScheduleNotificationSettings requestedRegular,
+    required AcademicScheduleNotificationSettings savedRegular,
+    required AcademicScheduleAlarmSettings? initialAlarm,
+    required AcademicScheduleAlarmSettings? requestedAlarm,
+    required AcademicScheduleAlarmSettings? savedAlarm,
+  }) {
+    final messages = <String>[];
+    if (requestedRegular.enabled && !savedRegular.enabled) {
+      messages.add('系统通知或精确提醒权限未开启，课程提醒已关闭');
+    } else if (initialRegular.enabled != savedRegular.enabled ||
+        (savedRegular.enabled &&
+            initialRegular.leadMinutes != savedRegular.leadMinutes)) {
+      messages.add(
+        savedRegular.enabled
+            ? '课程提醒已开启，提前 ${savedRegular.leadMinutes} 分钟'
+            : '课程提醒已关闭',
+      );
+    }
+
+    if (requestedAlarm != null && savedAlarm != null) {
+      if (requestedAlarm.enabled && !savedAlarm.enabled) {
+        messages.add('未获得闹钟权限，早课闹钟已关闭');
+      } else if (initialAlarm == null ||
+          initialAlarm.enabled != savedAlarm.enabled ||
+          (savedAlarm.enabled &&
+              initialAlarm.leadMinutes != savedAlarm.leadMinutes)) {
+        messages.add(
+          savedAlarm.enabled
+              ? '早课闹钟已开启，提前 ${savedAlarm.leadMinutes} 分钟响铃'
+              : '早课闹钟已关闭',
+        );
+      }
+    }
+    return messages.isEmpty ? '通知设置已保存' : messages.join('；');
   }
 
   void _showSnack(String message) {
@@ -1491,8 +1528,7 @@ class _NotificationSettingsSheetState
 
   @override
   Widget build(BuildContext context) {
-    final minuteOptions =
-        <int>{5, 10, 15, 20, 30, 45, 60, _leadMinutes}.toList()..sort();
+    const minuteOptions = <int>[15, 20, 30, 45, 60, 90, 120];
     final mediaQuery = MediaQuery.of(context);
     final colors = context.shuyoColors;
     final bottomInset = mediaQuery.viewInsets.bottom > 0
