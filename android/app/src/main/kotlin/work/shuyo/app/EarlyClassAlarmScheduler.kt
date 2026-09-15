@@ -14,59 +14,168 @@ object EarlyClassAlarmScheduler {
     private const val ACTION = "work.shuyo.app.EARLY_CLASS_ALARM"
 
     fun isAvailable(context: Context): Boolean {
-        return true
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
     }
 
     fun sync(context: Context, raw: List<Map<String, Any?>>): Int {
-      try {
-        cancelAll(context)
-        val manager = context.getSystemService(AlarmManager::class.java)
-        val now = System.currentTimeMillis()
-        val saved = JSONArray()
-        raw.forEachIndexed { index, item ->
-            val time = (item["fireTime"] as? Number)?.toLong() ?: return@forEachIndexed
-            if (time <= now) return@forEachIndexed
-            val id = item["id"]?.toString() ?: "alarm-$index-$time"
-            val requestCode = id.hashCode()
-            val intent = Intent(context, EarlyClassAlarmReceiver::class.java).apply {
-                action = ACTION
-                putExtra("title", item["title"]?.toString() ?: "早课提醒")
-                putExtra("courseTime", (item["courseTime"] as? Number)?.toLong() ?: time)
-                putExtra("alarmId", id)
+        return try {
+            val manager = context.getSystemService(AlarmManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !manager.canScheduleExactAlarms()
+            ) {
+                cancelAll(context)
+                return -1
             }
-            val pending = PendingIntent.getBroadcast(
-                context, requestCode, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pending)
-            } else {
-                manager.setExact(AlarmManager.RTC_WAKEUP, time, pending)
+
+            cancelAll(context)
+            val now = System.currentTimeMillis()
+            val saved = JSONArray()
+            raw.forEachIndexed { index, item ->
+                val time = (item["fireTime"] as? Number)?.toLong()
+                    ?: return@forEachIndexed
+                if (time <= now) return@forEachIndexed
+
+                val id = item["id"]?.toString() ?: "alarm-$index-$time"
+                val title = item["title"]?.toString() ?: "早课提醒"
+                val courseTime = (item["courseTime"] as? Number)?.toLong() ?: time
+                val requestCode = id.hashCode()
+                schedule(
+                    context = context,
+                    manager = manager,
+                    fireTime = time,
+                    requestCode = requestCode,
+                    id = id,
+                    title = title,
+                    courseTime = courseTime,
+                )
+                saved.put(JSONObject().apply {
+                    put("requestCode", requestCode)
+                    put("id", id)
+                    put("fireTime", time)
+                    put("title", title)
+                    put("courseTime", courseTime)
+                })
             }
-            saved.put(JSONObject().apply { put("requestCode", requestCode); put("id", id) })
+            save(context, saved)
+            saved.length()
+        } catch (_: SecurityException) {
+            -1
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY, saved.toString()).apply()
-        return saved.length()
-      } catch (_: SecurityException) {
-        return -1
-      }
+    }
+
+    fun restore(context: Context): Int {
+        return try {
+            val saved = load(context)
+            if (saved.length() == 0) return 0
+
+            val manager = context.getSystemService(AlarmManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !manager.canScheduleExactAlarms()
+            ) {
+                return -1
+            }
+
+            val now = System.currentTimeMillis()
+            val active = JSONArray()
+            var restored = 0
+            for (index in 0 until saved.length()) {
+                val item = saved.optJSONObject(index) ?: continue
+                val fireTime = item.optLong("fireTime", 0L)
+                if (fireTime <= now) continue
+
+                val id = item.optString("id", "alarm-$index-$fireTime")
+                val title = item.optString("title", "早课提醒")
+                val courseTime = item.optLong("courseTime", fireTime)
+                val requestCode = item.optInt("requestCode", id.hashCode())
+                schedule(
+                    context = context,
+                    manager = manager,
+                    fireTime = fireTime,
+                    requestCode = requestCode,
+                    id = id,
+                    title = title,
+                    courseTime = courseTime,
+                )
+                active.put(item)
+                restored++
+            }
+            save(context, active)
+            restored
+        } catch (_: SecurityException) {
+            -1
+        }
     }
 
     fun cancelAll(context: Context) {
         val manager = context.getSystemService(AlarmManager::class.java)
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val saved = runCatching { JSONArray(prefs.getString(KEY, "[]") ?: "[]") }.getOrDefault(JSONArray())
+        val saved = load(context)
         for (i in 0 until saved.length()) {
             val code = saved.optJSONObject(i)?.optInt("requestCode") ?: continue
-            val intent = Intent(context, EarlyClassAlarmReceiver::class.java).apply { action = ACTION }
+            val intent = Intent(context, EarlyClassAlarmReceiver::class.java).apply {
+                action = ACTION
+            }
             val pending = PendingIntent.getBroadcast(
-                context, code, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                context,
+                code,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             manager.cancel(pending)
             pending.cancel()
         }
-        prefs.edit().remove(KEY).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY).apply()
+    }
+
+    private fun schedule(
+        context: Context,
+        manager: AlarmManager,
+        fireTime: Long,
+        requestCode: Int,
+        id: String,
+        title: String,
+        courseTime: Long,
+    ) {
+        val alarmIntent = Intent(context, EarlyClassAlarmReceiver::class.java).apply {
+            action = ACTION
+            putExtra("title", title)
+            putExtra("courseTime", courseTime)
+            putExtra("alarmId", id)
+        }
+        val pending = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            alarmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val showIntent = Intent(context, EarlyClassAlarmActivity::class.java).apply {
+            putExtra("title", title)
+            putExtra("courseTime", courseTime)
+            putExtra("alarmId", id)
+        }
+        val showPendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            showIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        // Tell Android that this is a user-visible alarm. This is more suitable
+        // for an alarm-clock use case than a normal exact background alarm.
+        manager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(fireTime, showPendingIntent),
+            pending,
+        )
+    }
+
+    private fun load(context: Context): JSONArray {
+        val value = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY, "[]") ?: "[]"
+        return runCatching { JSONArray(value) }.getOrDefault(JSONArray())
+    }
+
+    private fun save(context: Context, alarms: JSONArray) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, alarms.toString()).apply()
     }
 }

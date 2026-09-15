@@ -16,6 +16,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingExactAlarmResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -63,21 +64,49 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAvailable" -> result.success(EarlyClassAlarmScheduler.isAvailable(this))
-                "requestAuthorization" -> {
-                    val manager = getSystemService(android.app.AlarmManager::class.java)
-                    val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                        manager.canScheduleExactAlarms()
-                    if (!allowed) {
-                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                    }
-                    result.success(allowed)
-                }
+                "requestAuthorization" -> requestExactAlarmAuthorization(result)
                 "sync" -> {
                     val alarms = call.argument<List<Map<String, Any?>>>("alarms") ?: emptyList()
                     result.success(EarlyClassAlarmScheduler.sync(this, alarms))
                 }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val result = pendingExactAlarmResult ?: return
+        val manager = getSystemService(android.app.AlarmManager::class.java)
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            manager.canScheduleExactAlarms()
+        pendingExactAlarmResult = null
+        result.success(allowed)
+    }
+
+    private fun requestExactAlarmAuthorization(result: MethodChannel.Result) {
+        val manager = getSystemService(android.app.AlarmManager::class.java)
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            manager.canScheduleExactAlarms()
+        if (allowed) {
+            result.success(true)
+            return
+        }
+        if (pendingExactAlarmResult != null) {
+            result.error("busy", "Exact alarm permission request is already open", null)
+            return
+        }
+
+        pendingExactAlarmResult = result
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:$packageName")
+                },
+            )
+        } catch (error: Exception) {
+            pendingExactAlarmResult = null
+            result.error("permission_unavailable", error.message, null)
         }
     }
 

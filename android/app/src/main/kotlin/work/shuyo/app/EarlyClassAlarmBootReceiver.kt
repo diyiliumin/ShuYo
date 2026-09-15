@@ -6,7 +6,12 @@ import android.content.Intent
 
 class EarlyClassAlarmBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        // Flutter resynchronizes the rolling alarm set when the app next starts.
-        // Existing alarms are intentionally left untouched here.
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> {
+                EarlyClassAlarmScheduler.restore(context)
+            }
+        }
     }
 }
