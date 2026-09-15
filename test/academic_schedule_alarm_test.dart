@@ -113,6 +113,7 @@ void main() {
 
   testWidgets('iOS 26 schedule settings request AlarmKit permission when saved',
       (tester) async {
+    final restoreFlutterError = _ignoreListTileBackgroundWarning();
     try {
       final repository = AcademicScheduleRepository(
         apiClient: _UnusedAcademicScheduleApiClient(),
@@ -165,6 +166,7 @@ void main() {
       expect(find.textContaining('早课闹钟已开启，提前 30 分钟响铃'),
           findsOneWidget);
     } finally {
+      restoreFlutterError();
       debugDefaultTargetPlatformOverride = null;
     }
   });
@@ -246,4 +248,22 @@ final _schedule = AcademicSchedule(
   fetchedAt: DateTime(2026, 8, 31),
 );
 
-class _StubNotificationsPlatform extends FlutterLocalNotificationsPlatform {}
+class _StubNotificationsPlatform extends FlutterLocalNotificationsPlatform {
+  @override
+  Future<List<PendingNotificationRequest>> pendingNotificationRequests() async {
+    return const [];
+  }
+}
+
+void Function() _ignoreListTileBackgroundWarning() {
+  final previous = FlutterError.onError;
+  FlutterError.onError = (details) {
+    if (details.exception.toString().startsWith(
+          'ListTile background color or ink splashes may be invisible.',
+        )) {
+      return;
+    }
+    previous?.call(details);
+  };
+  return () => FlutterError.onError = previous;
+}

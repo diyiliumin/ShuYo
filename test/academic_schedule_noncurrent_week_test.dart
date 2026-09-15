@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shuyo/data/models/academic_schedule.dart';
 import 'package:shuyo/data/repositories/academic_schedule_repository.dart';
+import 'package:shuyo/data/services/academic_auth_service.dart';
+import 'package:shuyo/data/services/academic_schedule_api_client.dart';
 import 'package:shuyo/data/services/academic_schedule_display_settings_service.dart';
 import 'package:shuyo/data/services/academic_schedule_notification_service.dart';
 import 'package:shuyo/data/services/academic_schedule_widget_service.dart';
@@ -16,7 +18,13 @@ void main() {
   testWidgets(
       'shows non-current-week courses unless a current course occupies the slot',
       (tester) async {
-    final repository = AcademicScheduleRepository();
+    final restoreFlutterError = _ignoreListTileBackgroundWarning();
+    addTearDown(restoreFlutterError);
+    final repository = AcademicScheduleRepository(
+      apiClient: AcademicScheduleApiClient(
+        authService: _FakeAcademicAuthService(),
+      ),
+    );
     final state = AcademicScheduleCacheState(
       schedule: _schedule,
       weekState: ScheduleWeekState(
@@ -80,6 +88,47 @@ void main() {
     expect(find.text('本周课程'), findsOneWidget);
     expect(find.text('下周课程'), findsNothing);
   });
+}
+
+void Function() _ignoreListTileBackgroundWarning() {
+  final previous = FlutterError.onError;
+  FlutterError.onError = (details) {
+    if (details.exception.toString().startsWith(
+          'ListTile background color or ink splashes may be invisible.',
+        )) {
+      return;
+    }
+    previous?.call(details);
+  };
+  return () => FlutterError.onError = previous;
+}
+
+class _FakeAcademicAuthService implements AcademicAuthService {
+  @override
+  Future<void> clearAccount() async {}
+
+  @override
+  Future<Set<String>> clearCookies() async => {};
+
+  @override
+  Future<void> markLoggedIn() async {}
+
+  @override
+  Future<String?> cookieHeader({Uri? targetUri}) async => null;
+
+  @override
+  Future<bool> hasWebVpnSession() async => false;
+
+  @override
+  Future<bool> hasAcademicSession() async => false;
+
+  @override
+  Future<WebVpnSessionStatus> validateDirectAcademicSession() async =>
+      WebVpnSessionStatus.loginRequired;
+
+  @override
+  Future<WebVpnSessionStatus> validateWebVpnSession() async =>
+      WebVpnSessionStatus.loginRequired;
 }
 
 CourseSession _session({
