@@ -51,6 +51,14 @@ class WeComConstants {
   static const forumWebVpnSsoHost =
       'https-oauth-shu-edu-cn-443.webvpn.shu.edu.cn';
 
+  /// WebVPN OAuth 握手使用的固定端点。
+  static const webVpnBase = 'https://webvpn.shu.edu.cn';
+  static const webVpnCallback = '$webVpnBase/callback/oauth2';
+  static const webVpnLanding = '$webVpnBase/site-nav/';
+  static const webVpnNewssoProxyHost =
+      'https-newsso-shu-edu-cn-443.webvpn.shu.edu.cn';
+  static const webVpnExternalIdFallback = 'YJrvSXWl';
+
   /// OAuth 授权端点路径。
   static const authorizePath = '/oauth/authorize';
 
@@ -68,6 +76,7 @@ class WeComConstants {
 /// SSO 会话建立之后的 `authorize` 阶段。
 class WeComOAuthTarget {
   const WeComOAuthTarget({
+    required this.kind,
     required this.clientId,
     required this.clientName,
     required this.scope,
@@ -78,6 +87,7 @@ class WeComOAuthTarget {
 
   /// 本科生教务系统（jwxt）：授权请求不带 state，需自行生成随机值防 CSRF。
   static const academic = WeComOAuthTarget(
+    kind: WeComOAuthTargetKind.academic,
     clientId: 'Km5t225E8KECKQ6ZDm5K2P6aS2459Cua',
     clientName: '本科生教务系统',
     scope: 'jw',
@@ -87,12 +97,25 @@ class WeComOAuthTarget {
 
   /// 上大论坛（乐乎社区，bbs）：必须先向它自己要一个 state，再改走 SSO 授权。
   static const forum = WeComOAuthTarget(
+    kind: WeComOAuthTargetKind.forum,
     clientId: 'vp8G2H42GGE86LP822LHF6Hs7f46483H',
     clientName: '上大bbs (乐乎社区)',
     scope: '',
     redirectUri: 'https://bbs.shu.edu.cn/auth/oauth2_basic/callback',
     stateBootstrapUrl: 'https://bbs.shu.edu.cn/auth/oauth2_basic',
   );
+
+  /// WebVPN 需要在 OAuth 授权后调用 `auth/finish`，不能按通用
+  /// callback 流程处理。
+  static const webVpn = WeComOAuthTarget(
+    kind: WeComOAuthTargetKind.webVpn,
+    clientId: 'nn7sbb22j2tKE100T024tEp42777p755',
+    clientName: 'WebVPN 访问控制系统',
+    scope: '',
+    redirectUri: WeComConstants.webVpnCallback,
+  );
+
+  final WeComOAuthTargetKind kind;
 
   final String clientId;
   final String clientName;
@@ -116,3 +139,5 @@ class WeComOAuthTarget {
         'state': '',
       };
 }
+
+enum WeComOAuthTargetKind { academic, forum, webVpn }
