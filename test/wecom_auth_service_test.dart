@@ -69,6 +69,39 @@ void main() {
       expect(result.sessionCookies.single.name, 'SHU_OAUTH2');
       expect(result.cookieSourceUri.host, 'newsso.shu.edu.cn');
     });
+
+    test('mirrors SSO session to direct and WebVPN forum OAuth hosts', () {
+      final sourceCookie = Cookie('SHU_OAUTH2', 'session')..path = '/';
+      final jar = WeComAuthService.mirrorForumSsoCookies([
+        WeComStoredCookie(
+          cookie: sourceCookie,
+          domain: 'newsso.shu.edu.cn',
+          path: '/',
+        ),
+        WeComStoredCookie(
+          cookie: Cookie('unrelated', 'value'),
+          domain: 'newsso.shu.edu.cn',
+          path: '/',
+        ),
+      ]);
+
+      final sessionDomains = jar
+          .where((entry) => entry.cookie.name == 'SHU_OAUTH2')
+          .map((entry) => entry.domain)
+          .toSet();
+      expect(
+        sessionDomains,
+        {
+          'newsso.shu.edu.cn',
+          WeComConstants.forumSsoHost,
+          WeComConstants.forumWebVpnSsoHost,
+        },
+      );
+      expect(
+        jar.where((entry) => entry.cookie.name == 'unrelated'),
+        hasLength(1),
+      );
+    });
   });
 
   group('WeComOAuthTarget', () {

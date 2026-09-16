@@ -35,6 +35,24 @@ bool isForumRegistrationCompletionUri(Uri uri) {
   return path == '/' || path == '/latest' || path == '/latest/';
 }
 
+@visibleForTesting
+bool isAuthenticatedForumCallbackCookie(String value) {
+  var decoded = value;
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try {
+      decoded = Uri.decodeComponent(decoded);
+    } on FormatException {
+      break;
+    }
+  }
+  try {
+    final data = jsonDecode(decoded);
+    return data is Map && data['authenticated'] == true;
+  } on Object {
+    return false;
+  }
+}
+
 bool _isForumRegistrationFlowUri(Uri uri) {
   if (uri.scheme != 'https' ||
       !ForumUrlResolver.isActiveForumHost(uri.host.toLowerCase())) {
@@ -364,6 +382,10 @@ class _ForumOAuthCompletionPageState extends State<ForumOAuthCompletionPage> {
         await _checkWebViewSession();
         return;
       }
+      if (ForumUrlResolver.usesWebVpn) {
+        await _checkWebVpnCallbackCookie();
+        return;
+      }
       await _authService.refreshFromWebView();
       final apiClient = DiscourseApiClient(authService: _authService);
       final session = await apiClient.getJson('/session/current.json');
@@ -386,6 +408,27 @@ class _ForumOAuthCompletionPageState extends State<ForumOAuthCompletionPage> {
     } finally {
       _checkingSession = false;
     }
+  }
+
+  Future<void> _checkWebVpnCallbackCookie() async {
+    final cookies = await WebViewCookieManager().getCookies(
+      domain: ForumUrlResolver.baseUri,
+    );
+    final authenticated = cookies.any(
+      (cookie) =>
+          cookie.name == 'authentication_data' &&
+          isAuthenticatedForumCallbackCookie(cookie.value),
+    );
+    if (kDebugMode) {
+      debugPrint(
+        '[FORUM_AUTH_CALLBACK] webvpn callback-cookie '
+        'authenticated=$authenticated '
+        'names=${cookies.map((cookie) => cookie.name).where((name) => name.isNotEmpty).toSet().toList()..sort()}',
+      );
+    }
+    if (!authenticated || _finalizingWebViewSession) return;
+    _finalizingWebViewSession = true;
+    unawaited(_completeWebViewSession());
   }
 
   Future<void> _checkWebViewSession() async {

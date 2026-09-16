@@ -142,9 +142,15 @@ class AcademicNativeAuthService {
       await WebVpnSessionStore().clearCachedCookiesForReauthentication();
       await _clearWebVpnAuthCookies(manager);
     }
-    if (_target == _NativeAuthTarget.forum) {
+    if (_target == _NativeAuthTarget.forum && _hasNativeForumSession) {
       await _resetForumWebViewCookies(manager);
+    } else if (_target == _NativeAuthTarget.forum && kDebugMode) {
+      debugPrint(
+        '[SHU_AUTH] forum-webview-cookie-reset skipped '
+        'reason=browser-bootstrap',
+      );
     }
+    await _repairWebVpnTokenShadows(manager);
     final domains = <String>{};
     final expectedByDomain = <String, Map<String, String>>{};
     for (final stored in _cookieStore.entries) {
@@ -245,6 +251,7 @@ class AcademicNativeAuthService {
         if (defaultTargetPlatform == TargetPlatform.android) {
           await Future<void>.delayed(const Duration(milliseconds: 500));
         }
+        await _debugProbeWebVpnForumEntry(manager);
         return;
       }
     }
@@ -304,7 +311,189 @@ class AcademicNativeAuthService {
         }
       }
     }
+    await _debugProbeWebVpnForumEntry(manager);
   }
+
+  /// Debug-only comparison request for the WebVPN forum entry.
+  ///
+  /// Android's CookieManager can report a cookie as visible without exposing
+  /// the raw Cookie header Chromium eventually sends. Replaying the visible
+  /// cookie set through HttpClient lets logs distinguish an invalid/stale
+  /// WebVPN token from WebView cookie scoping or duplicate-cookie behavior.
+  /// The response cookies are deliberately not stored, so this does not alter
+  /// the browser login transaction.
+  Future<void> _debugProbeWebVpnForumEntry(
+    WebViewCookieManager manager,
+  ) async {
+    if (!kDebugMode ||
+        _target != _NativeAuthTarget.forum ||
+        !ForumUrlResolver.usesWebVpn) {
+      return;
+    }
+    final uri = Uri.parse(
+      '${ForumUrlResolver.webVpnBaseUrl}/auth/oauth2_basic',
+    );
+    try {
+      final visible = (await manager.getCookies(domain: uri))
+          .where((cookie) => cookie.name.isNotEmpty)
+          .toList();
+      final details = visible
+          .map(
+            (cookie) => '${cookie.name}(${_describeCookieValue(cookie.value)})',
+          )
+          .toList();
+      debugPrint(
+        '[SHU_AUTH_DIAG] webvpn-forum-cookie-snapshot '
+        'count=${visible.length} cookies=$details',
+      );
+
+      final request = await _client.getUrl(uri).timeout(HttpTimeout.connect);
+      request.followRedirects = false;
+      request.headers
+        ..set(
+          HttpHeaders.acceptHeader,
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        )
+        ..set(HttpHeaders.userAgentHeader, ClientUserAgent.mobileBrowser);
+      if (visible.isNotEmpty) {
+        request.headers.set(
+          HttpHeaders.cookieHeader,
+          visible.map((cookie) => '${cookie.name}=${cookie.value}').join('; '),
+        );
+      }
+      final response = await request.close().timeout(HttpTimeout.normal);
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      final setCookieNames = <String>[];
+      for (final value in response.headers[HttpHeaders.setCookieHeader] ??
+          const <String>[]) {
+        final separator = value.indexOf('=');
+        if (separator > 0) {
+          setCookieNames.add(value.substring(0, separator));
+        }
+      }
+      debugPrint(
+        '[SHU_AUTH_DIAG] webvpn-forum-native-probe '
+        'status=${response.statusCode} '
+        'location=${location == null ? '-' : _describeDiagnosticUri(location, uri)} '
+        'setCookieNames=${setCookieNames.toSet().toList()..sort()}',
+      );
+      await response.drain<void>().timeout(HttpTimeout.normal);
+    } on Object catch (error) {
+      debugPrint(
+        '[SHU_AUTH_DIAG] webvpn-forum-native-probe-failed '
+        'type=${error.runtimeType} error=$error',
+      );
+    }
+  }
+
+  String _describeDiagnosticUri(String value, Uri base) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return 'unparseable';
+    final resolved = base.resolveUri(uri);
+    return '${resolved.host}${resolved.path} '
+        'queryKeys=${resolved.queryParameters.keys.toList()..sort()}';
+  }
+
+  /// Repairs empty host-only WebVPN tokens left by older forum sign-outs.
+  ///
+  /// The gateway token belongs to the independent WebVPN account. Older
+  /// builds tried to clear every cookie visible from the proxied forum host;
+  /// Android turned that into an empty host-only `webvpn-token`, which then
+  /// appeared before the valid parent-domain token in the Cookie header and
+  /// made the gateway treat the user as signed out.
+  Future<void> _repairWebVpnTokenShadows(
+    WebViewCookieManager manager,
+  ) async {
+    if (_target != _NativeAuthTarget.forum || !ForumUrlResolver.usesWebVpn) {
+      return;
+    }
+    final forumProxy = Uri.parse(ForumUrlResolver.webVpnBaseUrl);
+    final oauthProxy = Uri.parse(
+      'https://https-oauth-shu-edu-cn-443.webvpn.shu.edu.cn',
+    );
+    final sources = <Uri>[
+      Uri.parse(ForumUrlResolver.webVpnPortalUrl),
+      forumProxy,
+      oauthProxy,
+    ];
+    String? token;
+    for (final source in sources) {
+      try {
+        token = selectNonEmptyCookieValue(
+          await manager.getCookies(domain: source),
+          'webvpn-token',
+        );
+      } on Object {
+        continue;
+      }
+      if (token != null) break;
+    }
+    if (token == null) return;
+
+    final repaired = <String>[];
+    for (final target in [forumProxy, oauthProxy]) {
+      List<WebViewCookie> visible;
+      try {
+        visible = await manager.getCookies(domain: target);
+      } on Object {
+        visible = const [];
+      }
+      final emptyPaths = visible
+          .where(
+            (cookie) => cookie.name == 'webvpn-token' && cookie.value.isEmpty,
+          )
+          .map((cookie) => cookie.path.isEmpty ? '/' : cookie.path)
+          .toSet();
+      if (emptyPaths.isEmpty) continue;
+      for (final path in emptyPaths) {
+        await manager.setCookie(
+          WebViewCookie(
+            name: 'webvpn-token',
+            value: _webViewCookieValue(token),
+            domain: target.host,
+            path: path,
+          ),
+        );
+      }
+      repaired.add(target.host);
+    }
+    if (kDebugMode && repaired.isNotEmpty) {
+      debugPrint(
+        '[SHU_AUTH] repaired empty webvpn-token shadows domains=$repaired',
+      );
+    }
+  }
+
+  @visibleForTesting
+  static String? selectNonEmptyCookieValue(
+    Iterable<WebViewCookie> cookies,
+    String name,
+  ) {
+    for (final cookie in cookies) {
+      if (cookie.name == name && cookie.value.isNotEmpty) {
+        return cookie.value;
+      }
+    }
+    return null;
+  }
+
+  /// Password login bootstraps Discourse natively and therefore carries a
+  /// fresh `_forum_session` that must replace the browser's HttpOnly copy.
+  /// WeCom forum login deliberately returns the forum entry URL instead; its
+  /// WebView must keep the existing WebVPN parent-domain token and let the
+  /// forum's own HTTP response establish the fresh session.
+  bool get _hasNativeForumSession =>
+      hasNativeForumSession(_cookieStore.entries);
+
+  @visibleForTesting
+  static bool hasNativeForumSession(
+    Iterable<({Cookie cookie, String domain, String path})> cookies,
+  ) =>
+      cookies.any(
+        (stored) =>
+            stored.cookie.name == ForumConstants.sessionCookieName &&
+            ForumUrlResolver.isKnownForumHost(stored.domain),
+      );
 
   /// Android cannot reliably replace an existing HttpOnly forum session via
   /// CookieManager.setCookie (the API is not an HTTP response). Clear the
@@ -337,7 +526,8 @@ class AcademicNativeAuthService {
       if (isForumDomain &&
           (cookie.name == ForumConstants.sessionCookieName ||
               cookie.name == '_t' ||
-              cookie.name == '_bypass_cache')) {
+              cookie.name == '_bypass_cache' ||
+              cookie.name == 'authentication_data')) {
         continue;
       }
       if (cookie.name.isEmpty || cookie.value.isEmpty) continue;
@@ -565,7 +755,10 @@ class AcademicNativeAuthService {
       }
       uri = next;
     }
-    throw const AcademicNativeAuthException('tooManyRedirects', '认证入口跳转次数过多');
+    throw const AcademicNativeAuthException(
+      'tooManyRedirects',
+      '认证入口跳转次数过多',
+    );
   }
 
   @visibleForTesting
@@ -613,6 +806,14 @@ class AcademicNativeAuthService {
               '[SHU_AUTH] skip existing SHU_OAUTH2 while discovering forum login',
             );
           }
+          continue;
+        }
+        // This is the result marker of a previous Discourse OAuth callback,
+        // not input for a new transaction. Reinstalling it could make the
+        // WebVPN completion page accept an old login before the fresh callback
+        // has finished.
+        if (_target == _NativeAuthTarget.forum &&
+            cookie.name == 'authentication_data') {
           continue;
         }
         // Android's webview_flutter adapter may report the queried URL as
@@ -720,7 +921,30 @@ class AcademicNativeAuthService {
       );
     }
     _validateUri(loginUri);
-    return loginUri;
+    // auth/start now returns /oauth/authorize directly. Resolve that request
+    // here so the credential flow can still consume the legacy login page
+    // when no SSO session exists, while an existing session may finish at the
+    // WebVPN callback immediately.
+    var current = loginUri;
+    for (var redirects = 0; redirects < 16; redirects++) {
+      final response = await _request('GET', current, referer: portal);
+      final next = _redirectTarget(response, current);
+      await response.drain<void>().timeout(HttpTimeout.normal);
+      if (next == null) return current;
+      if (_isWebVpnCallbackUri(next)) return next;
+      if (next.path.contains(_newssoPathMarker)) return next;
+      current = next;
+    }
+    throw const AcademicNativeAuthException(
+      'tooManyRedirects',
+      'WebVPN认证入口跳转次数过多',
+    );
+  }
+
+  bool _isWebVpnCallbackUri(Uri uri) {
+    return uri.host == _webVpnHost &&
+        uri.path == '/callback/oauth2' &&
+        uri.queryParameters.containsKey('code');
   }
 
   Future<HttpClientResponse> _request(

@@ -44,6 +44,13 @@ class WeComConstants {
   /// 论坛走的是这个 SSO 域名（与 [ssoBase] 同源后端，但 cookie 按 host 隔离）。
   static const forumSsoHost = 'oauth.shu.edu.cn';
 
+  /// WebVPN 模式下论坛 OAuth 经过的代理 SSO 域名。
+  ///
+  /// Android WebView 不会把 [ssoBase] 的 host-only Cookie 发送给该域名，
+  /// 因此企微换取的 `SHU_OAUTH2` 需要另外写入这个 host。
+  static const forumWebVpnSsoHost =
+      'https-oauth-shu-edu-cn-443.webvpn.shu.edu.cn';
+
   /// OAuth 授权端点路径。
   static const authorizePath = '/oauth/authorize';
 

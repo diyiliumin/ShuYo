@@ -156,10 +156,10 @@ class WeComAuthService {
   /// 必须在阶段二结束后取出并写入 WebView，否则回调会因缺少会话而失败
   /// （论坛更会因缺少 `_forum_session` 返回 `csrf_detected`）。
   ///
-  /// `SHU_OAUTH2` 会额外镜像到论坛使用的 SSO 域（[WeComConstants.forumSsoHost]），
-  /// 因为该 cookie 按 host 隔离，而论坛的 `authorize` 走的是另一个域名。
+  /// `SHU_OAUTH2` 会额外镜像到论坛直连与 WebVPN 代理使用的
+  /// SSO 域，因为该 cookie 按 host 隔离。
   List<WeComStoredCookie> get cookieJar {
-    final jar = <WeComStoredCookie>[
+    final collected = <WeComStoredCookie>[
       for (final entry in _cookies.entries)
         WeComStoredCookie(
           cookie: entry.cookie,
@@ -167,17 +167,32 @@ class WeComAuthService {
           path: entry.path,
         ),
     ];
+    return mirrorForumSsoCookies(collected);
+  }
+
+  @visibleForTesting
+  static List<WeComStoredCookie> mirrorForumSsoCookies(
+    Iterable<WeComStoredCookie> cookies,
+  ) {
+    final collected = cookies.toList();
+    final jar = [...collected];
     final ssoHost = Uri.parse(WeComConstants.ssoBase).host;
-    for (final entry in [...jar]) {
+    final mirrors = <String>{
+      WeComConstants.forumSsoHost,
+      WeComConstants.forumWebVpnSsoHost,
+    };
+    for (final entry in collected) {
       if (entry.cookie.name != WeComConstants.sessionCookieName) continue;
       if (entry.domain != ssoHost) continue;
-      jar.add(
-        WeComStoredCookie(
-          cookie: entry.cookie,
-          domain: WeComConstants.forumSsoHost,
-          path: entry.path,
-        ),
-      );
+      for (final domain in mirrors) {
+        jar.add(
+          WeComStoredCookie(
+            cookie: entry.cookie,
+            domain: domain,
+            path: entry.path,
+          ),
+        );
+      }
     }
     return jar;
   }
