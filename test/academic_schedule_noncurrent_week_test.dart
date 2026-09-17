@@ -82,11 +82,85 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('显示非本周课程'), findsOneWidget);
     await tester.tap(find.text('显示非本周课程'));
+    await tester.ensureVisible(find.text('完成'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
     expect(find.text('本周课程'), findsOneWidget);
     expect(find.text('下周课程'), findsNothing);
+  });
+
+  testWidgets('shows credit directly below course metadata in display order',
+      (tester) async {
+    final restoreFlutterError = _ignoreListTileBackgroundWarning();
+    addTearDown(restoreFlutterError);
+    final repository = AcademicScheduleRepository(
+      apiClient: AcademicScheduleApiClient(
+        authService: _FakeAcademicAuthService(),
+      ),
+    );
+    final state = AcademicScheduleCacheState(
+      schedule: _schedule,
+      weekState: ScheduleWeekState(
+        currentWeek: 1,
+        anchorMonday: AcademicScheduleRepository.startOfWeek(DateTime.now()),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AcademicSchedulePage(
+          repository: repository,
+          notificationService:
+              AcademicScheduleNotificationService(repository: repository),
+          widgetService: AcademicScheduleWidgetService(repository: repository),
+          onLoginRequired: () async {},
+          initialState: state,
+          initialDisplayState: const AcademicScheduleDisplayState(
+            settings: AcademicScheduleDisplaySettings(
+              colorful: false,
+              showTeacher: false,
+              showCredit: true,
+            ),
+            courseColorValues: {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final currentCourseBlock = find.byKey(
+      const ValueKey('schedule-course-current'),
+    );
+    final creditText = find.descendant(
+      of: currentCourseBlock,
+      matching: find.text('2'),
+    );
+    expect(creditText, findsOneWidget);
+    expect(find.text('张老师'), findsNothing);
+    expect(
+      tester.getTopLeft(creditText).dy,
+      greaterThan(tester.getTopLeft(find.text('本周课程')).dy),
+    );
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('显示设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('显示学分'), findsOneWidget);
+    await tester.tap(find.text('显示教师'));
+    await tester.ensureVisible(find.text('完成'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('张老师'), findsOneWidget);
+    expect(creditText, findsOneWidget);
+    expect(
+      tester.getTopLeft(creditText).dy,
+      greaterThan(tester.getTopLeft(find.text('张老师')).dy),
+    );
   });
 }
 
@@ -136,12 +210,14 @@ CourseSession _session({
   required String name,
   required int weekday,
   required List<int> weeks,
+  String teacherName = '',
+  String credit = '',
 }) {
   return CourseSession(
     id: id,
     courseName: name,
     courseCode: id,
-    teacherName: '',
+    teacherName: teacherName,
     campus: '',
     location: '',
     weekday: weekday,
@@ -150,7 +226,7 @@ CourseSession _session({
     sections: const [1, 2],
     weeks: weeks,
     weekText: weeks.join(','),
-    credit: '',
+    credit: credit,
     note: '',
   );
 }
@@ -166,7 +242,14 @@ final _schedule = AcademicSchedule(
     className: '',
   ),
   sessions: [
-    _session(id: 'current', name: '本周课程', weekday: 1, weeks: const [1]),
+    _session(
+      id: 'current',
+      name: '本周课程',
+      weekday: 1,
+      weeks: const [1],
+      teacherName: '张老师',
+      credit: '2',
+    ),
     _session(id: 'covered', name: '被本周课程覆盖', weekday: 1, weeks: const [2]),
     _session(id: 'next', name: '下周课程', weekday: 2, weeks: const [2]),
   ],

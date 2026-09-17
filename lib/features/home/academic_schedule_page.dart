@@ -60,7 +60,7 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
   final _displaySettingsService = AcademicScheduleDisplaySettingsService();
   AcademicScheduleDisplaySettings _displaySettings =
       const AcademicScheduleDisplaySettings(
-          colorful: false, showTeacher: false);
+          colorful: false, showTeacher: false, showCredit: false);
   Map<String, int> _courseColorValues = const {};
   late bool _usingInitialState;
   String? _initialLoadError;
@@ -1221,6 +1221,7 @@ class _DisplaySettingsSheet extends StatefulWidget {
 class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
   late bool _colorful;
   late bool _showTeacher;
+  late bool _showCredit;
   late bool _showNonCurrentWeekCourses;
 
   @override
@@ -1228,6 +1229,7 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
     super.initState();
     _colorful = widget.initial.colorful;
     _showTeacher = widget.initial.showTeacher;
+    _showCredit = widget.initial.showCredit;
     _showNonCurrentWeekCourses = widget.initial.showNonCurrentWeekCourses;
   }
 
@@ -1245,61 +1247,69 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
           color: colors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-              child: Text(
-                '显示设置',
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('多彩显示'),
-              value: _colorful,
-              onChanged: (value) => setState(() => _colorful = value),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('显示教师'),
-              value: _showTeacher,
-              onChanged: (value) => setState(() => _showTeacher = value),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('显示非本周课程'),
-              value: _showNonCurrentWeekCourses,
-              onChanged: (value) =>
-                  setState(() => _showNonCurrentWeekCourses = value),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-              child: Text(
-                'ShuYo 支持添加小组件，试着在系统桌面中找找吧～',
-                style: ShuYoTextStyles.meta(color: colors.textMuted),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(
-                    AcademicScheduleDisplaySettings(
-                      colorful: _colorful,
-                      showTeacher: _showTeacher,
-                      showNonCurrentWeekCourses: _showNonCurrentWeekCourses,
-                    ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: Text(
+                  '显示设置',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w600,
                   ),
-                  child: const Text('完成'),
                 ),
               ),
-            ),
-          ],
+              SwitchListTile(
+                title: const _DisplaySettingTitle('多彩显示'),
+                value: _colorful,
+                onChanged: (value) => setState(() => _colorful = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示教师'),
+                value: _showTeacher,
+                onChanged: (value) => setState(() => _showTeacher = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示学分'),
+                value: _showCredit,
+                onChanged: (value) => setState(() => _showCredit = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示非本周课程'),
+                value: _showNonCurrentWeekCourses,
+                onChanged: (value) =>
+                    setState(() => _showNonCurrentWeekCourses = value),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(
+                  'ShuYo 支持添加小组件，试着在系统桌面中找找吧～',
+                  style: ShuYoTextStyles.meta(color: colors.textMuted),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(
+                      AcademicScheduleDisplaySettings(
+                        colorful: _colorful,
+                        showTeacher: _showTeacher,
+                        showCredit: _showCredit,
+                        showNonCurrentWeekCourses: _showNonCurrentWeekCourses,
+                      ),
+                    ),
+                    child: const Text('完成'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1741,8 +1751,7 @@ class _NotificationSettingsSheetState
                       setState(() => _alarmVibrationEnabled = value),
                 ),
               if (_alarmEnabled &&
-                  widget.notificationService
-                      .supportsAlarmRingtoneCustomization)
+                  widget.notificationService.supportsAlarmRingtoneCustomization)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('闹钟铃声'),
@@ -2186,9 +2195,7 @@ List<CourseSession> _sessionsIncludingNonCurrentWeek(
   }).toList()
     ..sort((a, b) {
       final weekday = a.weekday.compareTo(b.weekday);
-      return weekday != 0
-          ? weekday
-          : a.startSection.compareTo(b.startSection);
+      return weekday != 0 ? weekday : a.startSection.compareTo(b.startSection);
     });
 
   // Current-week courses are painted last as an additional safeguard so they
@@ -2879,6 +2886,12 @@ class _CourseBlock extends StatelessWidget {
         : displaySettings.colorful
             ? const Color(0xD9FFFFFF)
             : colors.scheduleCourseMetaText;
+    final courseMetaLines = <String>[
+      if (displaySettings.showTeacher && session.teacherName.isNotEmpty)
+        session.teacherName,
+      if (displaySettings.showCredit && session.credit.isNotEmpty)
+        session.credit,
+    ];
     return Material(
       color: fillColor,
       borderRadius: BorderRadius.circular(_scheduleCourseRadius),
@@ -2904,18 +2917,18 @@ class _CourseBlock extends StatelessWidget {
                   height: 1.2,
                 ),
               ),
-              if (displaySettings.showTeacher &&
-                  session.teacherName.isNotEmpty) ...[
+              if (courseMetaLines.isNotEmpty) ...[
                 const SizedBox(height: 3),
-                Text(
-                  session.teacherName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: metaTextColor,
-                    fontSize: 10.5,
+                for (final line in courseMetaLines)
+                  Text(
+                    line,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: metaTextColor,
+                      fontSize: 10.5,
+                    ),
                   ),
-                ),
               ],
               const Spacer(),
               if (session.location.isNotEmpty)
