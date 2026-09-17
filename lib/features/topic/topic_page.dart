@@ -1279,28 +1279,28 @@ class _TopicHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Padding(
             padding: const EdgeInsets.only(right: 2),
-            child: Tooltip(
-              message: reverseChronological ? '恢复楼中楼排序' : '按最新楼层倒序',
-              child: InkResponse(
-                key: const ValueKey('topic-order-toggle'),
-                onTap: onToggleOrder,
-                radius: 24,
-                containedInkWell: true,
-                highlightShape: BoxShape.circle,
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(
-                        Icons.swap_vert,
-                        color: reverseChronological
-                            ? Theme.of(context).colorScheme.primary
-                            : colors.textMuted,
-                      ),
-                    ),
+            child: SizedBox(
+              width: 48,
+              height: 48,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  key: const ValueKey('topic-order-toggle'),
+                  tooltip: reverseChronological ? '恢复楼中楼排序' : '按最新楼层倒序',
+                  onPressed: onToggleOrder,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 35,
+                    height: 35,
+                  ),
+                  style: IconButton.styleFrom(
+                    shape: const CircleBorder(),
+                  ),
+                  icon: Icon(
+                    Icons.swap_vert,
+                    color: reverseChronological
+                        ? Theme.of(context).colorScheme.primary
+                        : colors.textMuted,
                   ),
                 ),
               ),

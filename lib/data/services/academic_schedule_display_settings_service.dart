@@ -72,7 +72,7 @@ class AcademicScheduleDisplaySettingsService {
     SharedPreferences prefs,
   ) {
     return AcademicScheduleDisplaySettings(
-      colorful: prefs.getBool(_colorfulKey) ?? false,
+      colorful: prefs.getBool(_colorfulKey) ?? true,
       showTeacher: prefs.getBool(_showTeacherKey) ?? false,
       showCredit: prefs.getBool(_showCreditKey) ?? false,
       showNonCurrentWeekCourses:
