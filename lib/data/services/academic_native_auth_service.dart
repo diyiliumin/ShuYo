@@ -150,9 +150,14 @@ class AcademicNativeAuthService {
         'reason=browser-bootstrap',
       );
     }
-    await _repairWebVpnTokenShadows(manager);
     final domains = <String>{};
     final expectedByDomain = <String, Map<String, String>>{};
+    final webVpnProxyTokens = await _ensureWebVpnTokenOnForumProxies(manager);
+    for (final entry in webVpnProxyTokens.entries) {
+      domains.add(entry.key);
+      expectedByDomain.putIfAbsent(
+          entry.key, () => <String, String>{})['webvpn-token'] = entry.value;
+    }
     for (final stored in _cookieStore.entries) {
       final cookie = stored.cookie;
       if (cookie.value.isEmpty) continue;
@@ -210,8 +215,12 @@ class AcademicNativeAuthService {
         };
         final expected = expectedByDomain[domain] ?? const <String, String>{};
         for (final entry in expected.entries) {
-          final actual = visibleValues[entry.key];
-          if (actual == null || !_cookieValueMatches(entry.value, actual)) {
+          final hasExpectedValue = visible.any(
+            (cookie) =>
+                cookie.name == entry.key &&
+                _cookieValueMatches(entry.value, cookie.value),
+          );
+          if (!hasExpectedValue) {
             allVisible = false;
           }
         }
@@ -394,43 +403,35 @@ class AcademicNativeAuthService {
         'queryKeys=${resolved.queryParameters.keys.toList()..sort()}';
   }
 
-  /// Repairs empty host-only WebVPN tokens left by older forum sign-outs.
+  /// Makes the active WebVPN token visible to the forum OAuth WebView.
   ///
-  /// The gateway token belongs to the independent WebVPN account. Older
-  /// builds tried to clear every cookie visible from the proxied forum host;
-  /// Android turned that into an empty host-only `webvpn-token`, which then
-  /// appeared before the valid parent-domain token in the Cookie header and
-  /// made the gateway treat the user as signed out.
-  Future<void> _repairWebVpnTokenShadows(
+  /// The portal token may be host-only and therefore absent on proxy hosts
+  /// after an explicit forum logout. Older builds can also leave an empty or
+  /// stale host-only shadow. The validated portal copy is authoritative for
+  /// both cases.
+  Future<Map<String, String>> _ensureWebVpnTokenOnForumProxies(
     WebViewCookieManager manager,
   ) async {
     if (_target != _NativeAuthTarget.forum || !ForumUrlResolver.usesWebVpn) {
-      return;
+      return const {};
     }
+    final portal = Uri.parse(ForumUrlResolver.webVpnPortalUrl);
     final forumProxy = Uri.parse(ForumUrlResolver.webVpnBaseUrl);
     final oauthProxy = Uri.parse(
       'https://https-oauth-shu-edu-cn-443.webvpn.shu.edu.cn',
     );
-    final sources = <Uri>[
-      Uri.parse(ForumUrlResolver.webVpnPortalUrl),
-      forumProxy,
-      oauthProxy,
-    ];
     String? token;
-    for (final source in sources) {
-      try {
-        token = selectNonEmptyCookieValue(
-          await manager.getCookies(domain: source),
-          'webvpn-token',
-        );
-      } on Object {
-        continue;
-      }
-      if (token != null) break;
+    try {
+      token = selectNonEmptyCookieValue(
+        await manager.getCookies(domain: portal),
+        'webvpn-token',
+      );
+    } on Object {
+      token = null;
     }
-    if (token == null) return;
+    if (token == null) return const {};
 
-    final repaired = <String>[];
+    final ensured = <String, String>{};
     for (final target in [forumProxy, oauthProxy]) {
       List<WebViewCookie> visible;
       try {
@@ -438,14 +439,13 @@ class AcademicNativeAuthService {
       } on Object {
         visible = const [];
       }
-      final emptyPaths = visible
+      final tokenCookies = visible
           .where(
-            (cookie) => cookie.name == 'webvpn-token' && cookie.value.isEmpty,
+            (cookie) => cookie.name == 'webvpn-token',
           )
-          .map((cookie) => cookie.path.isEmpty ? '/' : cookie.path)
-          .toSet();
-      if (emptyPaths.isEmpty) continue;
-      for (final path in emptyPaths) {
+          .toList();
+      final paths = webVpnTokenPathsNeedingInstall(tokenCookies, token);
+      for (final path in paths) {
         await manager.setCookie(
           WebViewCookie(
             name: 'webvpn-token',
@@ -455,13 +455,15 @@ class AcademicNativeAuthService {
           ),
         );
       }
-      repaired.add(target.host);
+      ensured[target.host] = token;
     }
-    if (kDebugMode && repaired.isNotEmpty) {
+    if (kDebugMode && ensured.isNotEmpty) {
       debugPrint(
-        '[SHU_AUTH] repaired empty webvpn-token shadows domains=$repaired',
+        '[SHU_AUTH] ensured webvpn-token on forum proxies '
+        'domains=${ensured.keys.toList()..sort()}',
       );
     }
+    return ensured;
   }
 
   @visibleForTesting
@@ -475,6 +477,27 @@ class AcademicNativeAuthService {
       }
     }
     return null;
+  }
+
+  @visibleForTesting
+  static Set<String> webVpnTokenPathsNeedingInstall(
+    Iterable<WebViewCookie> cookies,
+    String expectedToken,
+  ) {
+    final tokenCookies =
+        cookies.where((cookie) => cookie.name == 'webvpn-token').toList();
+    final current = selectNonEmptyCookieValue(tokenCookies, 'webvpn-token');
+    final hasEmptyShadow = tokenCookies.any((cookie) => cookie.value.isEmpty);
+    if (current != null &&
+        _cookieValueMatches(expectedToken, current) &&
+        !hasEmptyShadow) {
+      return const {};
+    }
+    final paths = tokenCookies
+        .map((cookie) => cookie.path.isEmpty ? '/' : cookie.path)
+        .toSet();
+    if (paths.isEmpty) paths.add('/');
+    return paths;
   }
 
   /// Password login bootstraps Discourse natively and therefore carries a
@@ -1096,7 +1119,7 @@ class AcademicNativeAuthService {
     return host.isEmpty ? fallbackHost : host;
   }
 
-  bool _cookieValueMatches(String expected, String actual) {
+  static bool _cookieValueMatches(String expected, String actual) {
     if (expected == actual) return true;
     try {
       return Uri.decodeComponent(actual) == expected;

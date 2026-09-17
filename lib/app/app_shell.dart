@@ -1064,7 +1064,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return false;
       }
       if (status == WebVpnSessionStatus.loginRequired) {
-        await _clearInvalidWebVpnCredentials();
+        await _clearWebVpnCredentials();
         if (!mounted) return false;
         final result = await Navigator.of(context).push<NativeLoginResult>(
           shuyoRoute(builder: (context) => const NativeLoginPage.webVpn()),
@@ -1642,7 +1642,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Future<void> _handleWebVpnExpired() async {
     if (!mounted) return;
-    await _clearInvalidWebVpnCredentials();
+    await _clearWebVpnCredentials();
     if (!mounted) return;
     await _setWebVpnEnabled(false);
     if (!mounted) return;
@@ -1652,8 +1652,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _showSnack('WebVPN已失效，需要重新登录');
   }
 
-  Future<void> _clearInvalidWebVpnCredentials() async {
-    await WebVpnSessionStore().clearInvalidSession();
+  Future<void> _clearWebVpnCredentials() async {
+    await WebVpnSessionStore().clearSession();
     await ForumAuthService().removeCachedCookieNames({'webvpn-token'});
   }
 
@@ -1992,6 +1992,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _openClientSettings() async {
+    final hasWebVpnSession = !widget.isDemo &&
+        (_webVpnEnabled || await WebVpnSessionStore().hasStoredSession());
+    if (!mounted) return;
     await Navigator.of(context).push<void>(
       shuyoRoute(
         builder: (context) => ClientSettingsPage(
@@ -2007,8 +2010,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onClearForumCache: _clearForumCache,
           hasAcademicAccount: _hasAcademicSession,
           hasForumAccount: _repo.hasLocalAccount,
+          hasWebVpnSession: hasWebVpnSession,
           onAcademicLogout: _logoutAcademicAccount,
           onForumLogout: _logoutForumAccount,
+          onWebVpnLogout: _logoutWebVpnSession,
           isDemo: widget.isDemo,
           onExitDemo: widget.onExitDemo,
         ),
@@ -2253,6 +2258,26 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _syncOnboardingAccountStatus();
       await _showErrorDialog(
         title: '校园账户退出失败',
+        message: _friendlyError(error),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _logoutWebVpnSession() async {
+    _cancelForumRecovery();
+    try {
+      await _clearWebVpnCredentials();
+      if (!mounted) return false;
+      final switched = await _changeWebVpnFromAccountManager(false);
+      if (!mounted || !switched) return false;
+      setState(() => _webVpnReloginRequired = false);
+      _syncOnboardingAccountStatus();
+      return true;
+    } on Object catch (error) {
+      if (!mounted) return false;
+      await _showErrorDialog(
+        title: 'WebVPN退出失败',
         message: _friendlyError(error),
       );
       return false;

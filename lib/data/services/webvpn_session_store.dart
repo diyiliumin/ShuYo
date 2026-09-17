@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -30,10 +32,31 @@ class WebVpnSessionStore {
     await (await _preferencesLoader()).remove(cachedCookiesKey);
   }
 
-  /// Removes a WebVPN session only after the gateway has explicitly rejected
-  /// it. Transport failures must not call this method because a cached token
-  /// may still be valid when connectivity returns.
-  Future<void> clearInvalidSession() async {
+  Future<bool> hasStoredSession() async {
+    final raw = (await _preferencesLoader()).getString(cachedCookiesKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (_containsWebVpnToken(decoded)) return true;
+      } on Object {
+        // Fall through to the WebView copy if an older cache is malformed.
+      }
+    }
+    try {
+      final cookies = await _cookieLoader(
+        Uri.parse(ForumUrlResolver.webVpnPortalUrl),
+      );
+      return cookies.any(
+        (cookie) => cookie.name == 'webvpn-token' && cookie.value.isNotEmpty,
+      );
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Removes a WebVPN session after an explicit logout or a confirmed gateway
+  /// rejection. A transport failure alone must never call this method.
+  Future<void> clearSession() async {
     await clearCachedCookiesForReauthentication();
 
     final domains = <Uri>[
@@ -83,5 +106,17 @@ class WebVpnSessionStore {
     final withoutScheme = value.replaceFirst(RegExp(r'^https?://'), '');
     final host = withoutScheme.split('/').first.split(':').first;
     return host.isEmpty ? fallbackHost : host;
+  }
+
+  bool _containsWebVpnToken(Object? value) {
+    if (value is Map) {
+      if (value['name'] == 'webvpn-token' &&
+          value['value']?.toString().isNotEmpty == true) {
+        return true;
+      }
+      return value.values.any(_containsWebVpnToken);
+    }
+    if (value is Iterable) return value.any(_containsWebVpnToken);
+    return false;
   }
 }

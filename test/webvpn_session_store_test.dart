@@ -35,7 +35,7 @@ void main() {
       cookieSetter: (cookie) async => cleared.add(cookie),
     );
 
-    await store.clearInvalidSession();
+    await store.clearSession();
 
     expect(prefs.getString(WebVpnSessionStore.cachedCookiesKey), isNull);
     expect(
@@ -51,5 +51,18 @@ void main() {
           ),
       isTrue,
     );
+  });
+
+  test('detects a persisted WebVPN token while the switch is off', () async {
+    SharedPreferences.setMockInitialValues({
+      WebVpnSessionStore.cachedCookiesKey:
+          '{"portal":[{"name":"webvpn-token","value":"saved","domain":"webvpn.shu.edu.cn","path":"/"}]}',
+    });
+    final store = WebVpnSessionStore(
+      cookieLoader: (_) async => const [],
+      cookieSetter: (_) async {},
+    );
+
+    expect(await store.hasStoredSession(), isTrue);
   });
 }

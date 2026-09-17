@@ -117,4 +117,36 @@ void main() {
       'valid-token',
     );
   });
+
+  test('installs a WebVPN token when the forum proxy has none', () {
+    expect(
+      AcademicNativeAuthService.webVpnTokenPathsNeedingInstall(
+        const [],
+        'valid-token',
+      ),
+      {'/'},
+    );
+  });
+
+  test('repairs empty WebVPN token shadows on their existing paths', () {
+    expect(
+      AcademicNativeAuthService.webVpnTokenPathsNeedingInstall(
+        const [
+          WebViewCookie(
+            name: 'webvpn-token',
+            value: '',
+            domain: 'https-bbs-shu-edu-cn-443.webvpn.shu.edu.cn',
+            path: '/auth',
+          ),
+          WebViewCookie(
+            name: 'webvpn-token',
+            value: 'valid-token',
+            domain: 'webvpn.shu.edu.cn',
+          ),
+        ],
+        'valid-token',
+      ),
+      {'/auth', '/'},
+    );
+  });
 }
