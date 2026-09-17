@@ -166,6 +166,7 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
   bool _showTargetPostLoading = false;
   bool _showReadPositionToast = false;
   bool _readingTimingActive = true;
+  bool _reverseChronological = false;
 
   String get _readPositionKey {
     return ForumReadPositionStore.topicKey(
@@ -204,6 +205,7 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
     final nextTopicId = widget.detail?.id ?? widget.item.id;
     if (oldTopicId != nextTopicId ||
         oldWidget.currentUsername != widget.currentUsername) {
+      _reverseChronological = false;
       _readPositionSaveTimer?.cancel();
       _restoredReadPositionKey = null;
       _targetPostScrollKey = null;
@@ -253,9 +255,10 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
       );
     }
 
-    final threads = buildThreadedPosts(
-      detail.posts.where((post) => !post.isDeleted).toList(growable: false),
-    );
+    final posts =
+        detail.posts.where((post) => !post.isDeleted).toList(growable: false);
+    final threads = buildThreadedPosts(posts);
+    final reversePosts = buildReverseChronologicalPosts(posts);
     _pruneReadPositionKeys(detail.posts);
     _scheduleInitialPosition();
 
@@ -275,40 +278,82 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                     children: [
-                      _TopicHeader(detail: detail, category: widget.category),
-                      for (final thread in threads)
-                        _ThreadedPostView(
-                          thread: thread,
-                          canReply: detail.canCreatePost,
-                          isSubmittingReply: widget.isSubmittingReply,
-                          busyLikePostIds: widget.busyLikePostIds,
-                          busyPollKeys: widget.busyPollKeys,
-                          busyDeletePostIds: widget.busyDeletePostIds,
-                          busyReportPostIds: widget.busyReportPostIds,
-                          reportedPostIds: widget.reportedPostIds,
-                          expanded: _expandedReplyParents.contains(
-                            thread.post.postNumber,
+                      _TopicHeader(
+                        detail: detail,
+                        category: widget.category,
+                        reverseChronological: _reverseChronological,
+                        onToggleOrder: () {
+                          setState(() {
+                            _reverseChronological = !_reverseChronological;
+                          });
+                        },
+                      ),
+                      if (_reverseChronological)
+                        for (final post in reversePosts)
+                          _PostView(
+                            key: _postKeyFor(post.postNumber),
+                            post: post,
+                            replyContext: post.replyToPostNumber == null
+                                ? null
+                                : '回复 #${post.replyToPostNumber}',
+                            canLike: true,
+                            canReply: detail.canCreatePost &&
+                                !widget.isSubmittingReply,
+                            canDelete: post.postNumber != 1 &&
+                                post.yours &&
+                                post.canDelete,
+                            reported: post.reported ||
+                                widget.reportedPostIds.contains(post.id),
+                            isLiking: widget.busyLikePostIds.contains(post.id),
+                            busyPollKeys: widget.busyPollKeys,
+                            isDeleting:
+                                widget.busyDeletePostIds.contains(post.id),
+                            isReporting:
+                                widget.busyReportPostIds.contains(post.id),
+                            onReply: () => _replyTo(post),
+                            onLike: () => _like(post),
+                            onVotePoll: widget.onVotePoll,
+                            onTogglePollStatus: widget.onTogglePollStatus,
+                            onDelete: () => _confirmDelete(post),
+                            onReport: () => widget.onReportPost(post),
+                            onOpenUser: widget.onOpenUser,
+                            onOpenImage: _openImagePreview,
+                            onOpenInternalTopic: widget.onOpenInternalTopic,
                           ),
-                          collapsedReplyCount: _collapsedReplyCount,
-                          onToggleExpanded: () {
-                            setState(() {
-                              final parent = thread.post.postNumber;
-                              if (!_expandedReplyParents.add(parent)) {
-                                _expandedReplyParents.remove(parent);
-                              }
-                            });
-                          },
-                          onReply: _replyTo,
-                          onLike: _like,
-                          onVotePoll: widget.onVotePoll,
-                          onTogglePollStatus: widget.onTogglePollStatus,
-                          onDelete: _confirmDelete,
-                          onReport: widget.onReportPost,
-                          onOpenUser: widget.onOpenUser,
-                          onOpenImage: _openImagePreview,
-                          onOpenInternalTopic: widget.onOpenInternalTopic,
-                          postKeyFor: _postKeyFor,
-                        ),
+                      if (!_reverseChronological)
+                        for (final thread in threads)
+                          _ThreadedPostView(
+                            thread: thread,
+                            canReply: detail.canCreatePost,
+                            isSubmittingReply: widget.isSubmittingReply,
+                            busyLikePostIds: widget.busyLikePostIds,
+                            busyPollKeys: widget.busyPollKeys,
+                            busyDeletePostIds: widget.busyDeletePostIds,
+                            busyReportPostIds: widget.busyReportPostIds,
+                            reportedPostIds: widget.reportedPostIds,
+                            expanded: _expandedReplyParents.contains(
+                              thread.post.postNumber,
+                            ),
+                            collapsedReplyCount: _collapsedReplyCount,
+                            onToggleExpanded: () {
+                              setState(() {
+                                final parent = thread.post.postNumber;
+                                if (!_expandedReplyParents.add(parent)) {
+                                  _expandedReplyParents.remove(parent);
+                                }
+                              });
+                            },
+                            onReply: _replyTo,
+                            onLike: _like,
+                            onVotePoll: widget.onVotePoll,
+                            onTogglePollStatus: widget.onTogglePollStatus,
+                            onDelete: _confirmDelete,
+                            onReport: widget.onReportPost,
+                            onOpenUser: widget.onOpenUser,
+                            onOpenImage: _openImagePreview,
+                            onOpenInternalTopic: widget.onOpenInternalTopic,
+                            postKeyFor: _postKeyFor,
+                          ),
                       if (_activeTargetPostNumber != null)
                         SizedBox(height: _targetPostBottomPadding(context)),
                     ],
@@ -801,6 +846,16 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
         !_scrollController.hasClients) {
       return;
     }
+    final anchorPostNumber = position.anchorPostNumber;
+    if (anchorPostNumber != null) {
+      _expandParentForPost(anchorPostNumber);
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted ||
+          key != _readPositionKey ||
+          !_scrollController.hasClients) {
+        return;
+      }
+    }
     final maxScrollExtent = _scrollController.position.maxScrollExtent;
     if (!_hasRestorableReadPosition(position, maxScrollExtent)) {
       return;
@@ -825,6 +880,9 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
   ) {
     if (maxScrollExtent <= _minimumSavedReadOffset) {
       return false;
+    }
+    if (position.anchorPostNumber != null) {
+      return true;
     }
     if (_isBottomReadPosition(position)) {
       return true;
@@ -973,7 +1031,7 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
       return;
     }
     final offset = _scrollController.offset;
-    if (offset < _minimumSavedReadOffset) {
+    if (!_reverseChronological && offset < _minimumSavedReadOffset) {
       await ForumReadPositionStore.remove(_readPositionKey);
       return;
     }
@@ -986,7 +1044,7 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
       offset,
       anchorPostNumber: anchor?.postNumber,
       anchorDelta: anchor?.delta ?? 0,
-      bottomDistance: bottomDistance,
+      bottomDistance: _reverseChronological ? null : bottomDistance,
     );
   }
 
@@ -1111,32 +1169,76 @@ class _ReadPositionAnchor {
 }
 
 class _TopicHeader extends StatelessWidget {
-  const _TopicHeader({required this.detail, required this.category});
+  const _TopicHeader({
+    required this.detail,
+    required this.category,
+    required this.reverseChronological,
+    required this.onToggleOrder,
+  });
 
   final TopicDetail detail;
   final ForumCategory? category;
+  final bool reverseChronological;
+  final VoidCallback onToggleOrder;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.shuyoColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            detail.title,
-            style: ShuYoTextStyles.title(
-              color: colors.textPrimary,
-              size: 20.5,
-              height: 1.2,
-              weight: FontWeight.w500,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  detail.title,
+                  style: ShuYoTextStyles.title(
+                    color: colors.textPrimary,
+                    size: 20.5,
+                    height: 1.2,
+                    weight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '${category?.name ?? '未知分区'} · ${detail.postsCount} 楼',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            '${category?.name ?? '未知分区'} · ${detail.postsCount} 楼',
-            style: TextStyle(color: colors.textSecondary),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: Tooltip(
+              message: reverseChronological ? '恢复楼中楼排序' : '按最新楼层倒序',
+              child: InkResponse(
+                key: const ValueKey('topic-order-toggle'),
+                onTap: onToggleOrder,
+                radius: 24,
+                containedInkWell: true,
+                highlightShape: BoxShape.circle,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Icon(
+                        Icons.swap_vert,
+                        color: reverseChronological
+                            ? Theme.of(context).colorScheme.primary
+                            : colors.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
