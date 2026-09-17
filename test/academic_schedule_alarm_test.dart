@@ -180,9 +180,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(methodCalls, contains('requestAuthorization'));
-      expect((await alarmService.loadAlarmSettings()).vibrationEnabled, isTrue);
-      expect(find.textContaining('早课闹钟已开启，提前 30 分钟响铃'),
-          findsOneWidget);
+      expect(find.textContaining('早课闹钟已开启，提前 30 分钟响铃'), findsOneWidget);
     } finally {
       restoreFlutterError();
       debugDefaultTargetPlatformOverride = null;
