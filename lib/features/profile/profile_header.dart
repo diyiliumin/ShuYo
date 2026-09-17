@@ -146,8 +146,8 @@ class ProfileHeader extends StatelessWidget {
     if (onTap == null) {
       return header;
     }
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: header,
     );
