@@ -269,7 +269,7 @@ void main() {
     await tester.ensureVisible(find.byType(Switch));
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
-    expect(find.text('关闭后需重新登录论坛账户'), findsOneWidget);
+    expect(find.text('关闭后可能需要重新登录论坛'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pumpAndSettle();
     expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
@@ -303,7 +303,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('开启WebVPN连接'), findsOneWidget);
-    expect(find.text('开启后需要重新登录论坛账户'), findsOneWidget);
+    expect(find.text('开启后可能需要重新登录论坛'), findsOneWidget);
     expect(changeRequested, isFalse);
 
     await tester.tap(find.widgetWithText(TextButton, '取消'));

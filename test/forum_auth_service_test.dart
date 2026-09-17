@@ -86,4 +86,19 @@ void main() {
     expect(cleared.map((cookie) => cookie.name), ['_forum_session']);
     expect(cleared.single.value, isEmpty);
   });
+
+  test('removes a rejected WebVPN token but preserves forum sessions',
+      () async {
+    final service = ForumAuthService(
+      cookieLoader: (_) async => const [],
+      cookieSetter: (_) async {},
+    );
+
+    await service.removeCachedCookieNames({'webvpn-token'});
+
+    final header = await service.cookieHeader();
+    expect(header, contains('_t=trust-token'));
+    expect(header, contains('_forum_session=old-session'));
+    expect(header, isNot(contains('webvpn-token=')));
+  });
 }

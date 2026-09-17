@@ -921,7 +921,7 @@ class _StartupOnboardingState extends State<StartupOnboarding>
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('开启WebVPN连接'),
-              content: const Text('开启后需要重新登录论坛账户'),
+              content: const Text('开启后可能需要重新登录论坛'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
@@ -941,7 +941,7 @@ class _StartupOnboardingState extends State<StartupOnboarding>
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('关闭WebVPN连接'),
-              content: const Text('关闭后需重新登录论坛账户'),
+              content: const Text('关闭后可能需要重新登录论坛'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
