@@ -34,9 +34,9 @@ import '../data/services/client_settings_service.dart';
 import '../data/services/discourse_api_client.dart';
 import '../data/services/forum_image_headers.dart';
 import '../data/services/forum_image_cache.dart';
-import '../data/services/forum_account_snapshot.dart';
 import '../data/services/forum_auth_service.dart';
 import '../data/services/http_timeout.dart';
+import '../data/services/webvpn_session_store.dart';
 import '../features/auth/native_login_page.dart';
 import '../features/forum/create_topic_page.dart';
 import '../features/forum/forum_filter_bar.dart';
@@ -1057,31 +1057,36 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Future<bool> _changeWebVpnFromAccountManager(bool enabled) async {
     if (widget.isDemo || !mounted) return false;
     if (enabled) {
-      final result = await Navigator.of(context).push<NativeLoginResult>(
-        shuyoRoute(builder: (context) => const NativeLoginPage.webVpn()),
-      );
-      if (result != NativeLoginResult.authenticated || !mounted) return false;
+      final status = await AcademicAuthService().validateWebVpnSession();
+      if (!mounted) return false;
+      if (status == WebVpnSessionStatus.unavailable) {
+        _showSnack('暂时无法验证WebVPN连接，请稍后重试');
+        return false;
+      }
+      if (status == WebVpnSessionStatus.loginRequired) {
+        await _clearWebVpnCredentials();
+        if (!mounted) return false;
+        final result = await Navigator.of(context).push<NativeLoginResult>(
+          shuyoRoute(builder: (context) => const NativeLoginPage.webVpn()),
+        );
+        if (result != NativeLoginResult.authenticated || !mounted) return false;
+      }
       setState(() => _webVpnReloginRequired = false);
     }
     try {
       await _setWebVpnEnabled(enabled);
       if (!mounted) return false;
-      if (!enabled) {
-        // Direct and WebVPN forum sessions are intentionally isolated. A
-        // deliberate switch back to direct access always starts a fresh forum
-        // login, while the WebVPN session remains available for a later switch.
-        await ForumAuthService().clearCookiesForMode(ForumAccessMode.direct);
-        await const ForumAccountSnapshotStore().clear();
-      }
       await _reloadForumRepositoryAfterAccessModeChange();
       if (!mounted) return false;
-      if (enabled && _repo.hasLocalAccount && !_repo.isOnline) {
+      final hasStoredForumSession =
+          _repo.hasLocalAccount || await ForumAuthService().hasForumCookies();
+      if (hasStoredForumSession && !_repo.isOnline) {
         final recovery = await _recoverForumConnection(
           forceValidation: true,
           userInitiated: true,
         );
         if (mounted && recovery.isRestored) {
-          _showSnack('WebVPN已登录，论坛连接已恢复');
+          _showSnack(enabled ? 'WebVPN已开启，论坛连接已恢复' : '已关闭WebVPN，论坛连接已恢复');
         }
       }
       return true;
@@ -1528,7 +1533,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         repository: _repo,
       );
     }
-    if (!_repo.hasLocalAccount) {
+    if (!_repo.hasLocalAccount && !await ForumAuthService().hasForumCookies()) {
       return ForumRecoveryResult(
         status: ForumRecoveryStatus.requiresReauthentication,
         repository: _repo,
@@ -1598,6 +1603,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         repository: _repo,
       );
     } on ForumAuthException catch (error) {
+      await ForumAuthService().clearCookiesForMode(ForumUrlResolver.mode);
       _repo.markAuthenticationRequired();
       return ForumRecoveryResult(
         status: ForumRecoveryStatus.requiresReauthentication,
@@ -1636,12 +1642,19 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Future<void> _handleWebVpnExpired() async {
     if (!mounted) return;
+    await _clearWebVpnCredentials();
+    if (!mounted) return;
     await _setWebVpnEnabled(false);
     if (!mounted) return;
     setState(() => _webVpnReloginRequired = true);
     _repo.markConnectionUnavailable();
     _syncOnboardingAccountStatus();
     _showSnack('WebVPN已失效，需要重新登录');
+  }
+
+  Future<void> _clearWebVpnCredentials() async {
+    await WebVpnSessionStore().clearSession();
+    await ForumAuthService().removeCachedCookieNames({'webvpn-token'});
   }
 
   Future<ForumRepository> _connectForumRepositoryWithFallback(
@@ -1979,6 +1992,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _openClientSettings() async {
+    final hasWebVpnSession = !widget.isDemo &&
+        (_webVpnEnabled || await WebVpnSessionStore().hasStoredSession());
+    if (!mounted) return;
     await Navigator.of(context).push<void>(
       shuyoRoute(
         builder: (context) => ClientSettingsPage(
@@ -1994,8 +2010,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onClearForumCache: _clearForumCache,
           hasAcademicAccount: _hasAcademicSession,
           hasForumAccount: _repo.hasLocalAccount,
+          hasWebVpnSession: hasWebVpnSession,
           onAcademicLogout: _logoutAcademicAccount,
           onForumLogout: _logoutForumAccount,
+          onWebVpnLogout: _logoutWebVpnSession,
           isDemo: widget.isDemo,
           onExitDemo: widget.onExitDemo,
         ),
@@ -2240,6 +2258,26 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _syncOnboardingAccountStatus();
       await _showErrorDialog(
         title: '校园账户退出失败',
+        message: _friendlyError(error),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _logoutWebVpnSession() async {
+    _cancelForumRecovery();
+    try {
+      await _clearWebVpnCredentials();
+      if (!mounted) return false;
+      final switched = await _changeWebVpnFromAccountManager(false);
+      if (!mounted || !switched) return false;
+      setState(() => _webVpnReloginRequired = false);
+      _syncOnboardingAccountStatus();
+      return true;
+    } on Object catch (error) {
+      if (!mounted) return false;
+      await _showErrorDialog(
+        title: 'WebVPN退出失败',
         message: _friendlyError(error),
       );
       return false;

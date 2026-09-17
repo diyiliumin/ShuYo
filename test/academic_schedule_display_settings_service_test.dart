@@ -16,6 +16,7 @@ void main() {
 
     expect(settings.colorful, isFalse);
     expect(settings.showTeacher, isFalse);
+    expect(settings.showCredit, isFalse);
     expect(settings.showNonCurrentWeekCourses, isTrue);
   });
 
@@ -26,6 +27,7 @@ void main() {
       const AcademicScheduleDisplaySettings(
         colorful: true,
         showTeacher: true,
+        showCredit: true,
         showNonCurrentWeekCourses: false,
       ),
     );
@@ -33,6 +35,7 @@ void main() {
 
     expect(settings.colorful, isTrue);
     expect(settings.showTeacher, isTrue);
+    expect(settings.showCredit, isTrue);
     expect(settings.showNonCurrentWeekCourses, isFalse);
   });
 

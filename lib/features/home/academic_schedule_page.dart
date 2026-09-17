@@ -60,7 +60,7 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
   final _displaySettingsService = AcademicScheduleDisplaySettingsService();
   AcademicScheduleDisplaySettings _displaySettings =
       const AcademicScheduleDisplaySettings(
-          colorful: false, showTeacher: false);
+          colorful: false, showTeacher: false, showCredit: false);
   Map<String, int> _courseColorValues = const {};
   late bool _usingInitialState;
   String? _initialLoadError;
@@ -977,6 +977,9 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
     final alarmInitial = alarmsSupported
         ? await widget.notificationService.loadAlarmSettings()
         : const AcademicScheduleAlarmSettings(enabled: false, leadMinutes: 20);
+    final alarmRingtoneName = alarmsSupported
+        ? await widget.notificationService.loadAlarmRingtoneName()
+        : null;
     if (!mounted) {
       return;
     }
@@ -989,6 +992,8 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
         initial: initial,
         alarmsSupported: alarmsSupported,
         alarmInitial: alarmInitial,
+        notificationService: widget.notificationService,
+        alarmRingtoneName: alarmRingtoneName,
       ),
     );
     if (!mounted || next == null) {
@@ -1065,7 +1070,9 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
       } else if (initialAlarm == null ||
           initialAlarm.enabled != savedAlarm.enabled ||
           (savedAlarm.enabled &&
-              initialAlarm.leadMinutes != savedAlarm.leadMinutes)) {
+              (initialAlarm.leadMinutes != savedAlarm.leadMinutes ||
+                  initialAlarm.vibrationEnabled !=
+                      savedAlarm.vibrationEnabled))) {
         messages.add(
           savedAlarm.enabled
               ? '早课闹钟已开启，提前 ${savedAlarm.leadMinutes} 分钟响铃'
@@ -1214,6 +1221,7 @@ class _DisplaySettingsSheet extends StatefulWidget {
 class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
   late bool _colorful;
   late bool _showTeacher;
+  late bool _showCredit;
   late bool _showNonCurrentWeekCourses;
 
   @override
@@ -1221,6 +1229,7 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
     super.initState();
     _colorful = widget.initial.colorful;
     _showTeacher = widget.initial.showTeacher;
+    _showCredit = widget.initial.showCredit;
     _showNonCurrentWeekCourses = widget.initial.showNonCurrentWeekCourses;
   }
 
@@ -1238,61 +1247,69 @@ class _DisplaySettingsSheetState extends State<_DisplaySettingsSheet> {
           color: colors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-              child: Text(
-                '显示设置',
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('多彩显示'),
-              value: _colorful,
-              onChanged: (value) => setState(() => _colorful = value),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('显示教师'),
-              value: _showTeacher,
-              onChanged: (value) => setState(() => _showTeacher = value),
-            ),
-            SwitchListTile(
-              title: const _DisplaySettingTitle('显示非本周课程'),
-              value: _showNonCurrentWeekCourses,
-              onChanged: (value) =>
-                  setState(() => _showNonCurrentWeekCourses = value),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-              child: Text(
-                'ShuYo 支持添加小组件，试着在系统桌面中找找吧～',
-                style: ShuYoTextStyles.meta(color: colors.textMuted),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(
-                    AcademicScheduleDisplaySettings(
-                      colorful: _colorful,
-                      showTeacher: _showTeacher,
-                      showNonCurrentWeekCourses: _showNonCurrentWeekCourses,
-                    ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: Text(
+                  '显示设置',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w600,
                   ),
-                  child: const Text('完成'),
                 ),
               ),
-            ),
-          ],
+              SwitchListTile(
+                title: const _DisplaySettingTitle('多彩显示'),
+                value: _colorful,
+                onChanged: (value) => setState(() => _colorful = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示教师'),
+                value: _showTeacher,
+                onChanged: (value) => setState(() => _showTeacher = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示学分'),
+                value: _showCredit,
+                onChanged: (value) => setState(() => _showCredit = value),
+              ),
+              SwitchListTile(
+                title: const _DisplaySettingTitle('显示非本周课程'),
+                value: _showNonCurrentWeekCourses,
+                onChanged: (value) =>
+                    setState(() => _showNonCurrentWeekCourses = value),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(
+                  'ShuYo 支持添加小组件，试着在系统桌面中找找吧～',
+                  style: ShuYoTextStyles.meta(color: colors.textMuted),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(
+                      AcademicScheduleDisplaySettings(
+                        colorful: _colorful,
+                        showTeacher: _showTeacher,
+                        showCredit: _showCredit,
+                        showNonCurrentWeekCourses: _showNonCurrentWeekCourses,
+                      ),
+                    ),
+                    child: const Text('完成'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1565,11 +1582,15 @@ class _NotificationSettingsSheet extends StatefulWidget {
     required this.initial,
     required this.alarmsSupported,
     required this.alarmInitial,
+    required this.notificationService,
+    required this.alarmRingtoneName,
   });
 
   final AcademicScheduleNotificationSettings initial;
   final bool alarmsSupported;
   final AcademicScheduleAlarmSettings alarmInitial;
+  final AcademicScheduleNotificationService notificationService;
+  final String? alarmRingtoneName;
 
   @override
   State<_NotificationSettingsSheet> createState() =>
@@ -1582,6 +1603,9 @@ class _NotificationSettingsSheetState
   late int _leadMinutes;
   late bool _alarmEnabled;
   late int _alarmLeadMinutes;
+  late bool _alarmVibrationEnabled;
+  late String? _alarmRingtoneName;
+  bool _pickingAlarmRingtone = false;
 
   @override
   void initState() {
@@ -1590,6 +1614,8 @@ class _NotificationSettingsSheetState
     _leadMinutes = widget.initial.leadMinutes;
     _alarmEnabled = widget.alarmInitial.enabled;
     _alarmLeadMinutes = widget.alarmInitial.leadMinutes;
+    _alarmVibrationEnabled = widget.alarmInitial.vibrationEnabled;
+    _alarmRingtoneName = widget.alarmRingtoneName;
   }
 
   @override
@@ -1672,7 +1698,7 @@ class _NotificationSettingsSheetState
               DropdownButtonFormField<int>(
                 initialValue: _leadMinutes,
                 decoration: const InputDecoration(
-                  labelText: '提前多久提醒',
+                  labelText: '提前时间',
                   border: OutlineInputBorder(),
                 ),
                 items: [
@@ -1700,7 +1726,7 @@ class _NotificationSettingsSheetState
                 DropdownButtonFormField<int>(
                   initialValue: _alarmLeadMinutes,
                   decoration: const InputDecoration(
-                    labelText: '闹钟提前时间',
+                    labelText: '提前时间',
                     border: OutlineInputBorder(),
                   ),
                   items: [
@@ -1715,6 +1741,33 @@ class _NotificationSettingsSheetState
                       setState(() => _alarmLeadMinutes = value);
                     }
                   },
+                ),
+              if (_alarmEnabled)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('开启震动'),
+                  value: _alarmVibrationEnabled,
+                  onChanged: (value) =>
+                      setState(() => _alarmVibrationEnabled = value),
+                ),
+              if (_alarmEnabled &&
+                  widget.notificationService.supportsAlarmRingtoneCustomization)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('闹钟铃声'),
+                  subtitle: Text(
+                    _alarmRingtoneName ?? '默认',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: _pickingAlarmRingtone
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  enabled: !_pickingAlarmRingtone,
+                  onTap: _pickAlarmRingtone,
                 ),
             ],
             const SizedBox(height: 16),
@@ -1732,6 +1785,7 @@ class _NotificationSettingsSheetState
                           ? AcademicScheduleAlarmSettings(
                               enabled: _alarmEnabled,
                               leadMinutes: _alarmLeadMinutes,
+                              vibrationEnabled: _alarmVibrationEnabled,
                             )
                           : null,
                     ),
@@ -1762,6 +1816,24 @@ class _NotificationSettingsSheetState
         ],
       ),
     );
+  }
+
+  Future<void> _pickAlarmRingtone() async {
+    if (_pickingAlarmRingtone) {
+      return;
+    }
+    setState(() => _pickingAlarmRingtone = true);
+    try {
+      final name = await widget.notificationService.pickAlarmRingtone();
+      if (!mounted || name == null) {
+        return;
+      }
+      setState(() => _alarmRingtoneName = name);
+    } finally {
+      if (mounted) {
+        setState(() => _pickingAlarmRingtone = false);
+      }
+    }
   }
 }
 
@@ -2814,6 +2886,12 @@ class _CourseBlock extends StatelessWidget {
         : displaySettings.colorful
             ? const Color(0xD9FFFFFF)
             : colors.scheduleCourseMetaText;
+    final courseMetaLines = <String>[
+      if (displaySettings.showTeacher && session.teacherName.isNotEmpty)
+        session.teacherName,
+      if (displaySettings.showCredit && session.credit.isNotEmpty)
+        session.credit,
+    ];
     return Material(
       color: fillColor,
       borderRadius: BorderRadius.circular(_scheduleCourseRadius),
@@ -2839,18 +2917,18 @@ class _CourseBlock extends StatelessWidget {
                   height: 1.2,
                 ),
               ),
-              if (displaySettings.showTeacher &&
-                  session.teacherName.isNotEmpty) ...[
+              if (courseMetaLines.isNotEmpty) ...[
                 const SizedBox(height: 3),
-                Text(
-                  session.teacherName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: metaTextColor,
-                    fontSize: 10.5,
+                for (final line in courseMetaLines)
+                  Text(
+                    line,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: metaTextColor,
+                      fontSize: 10.5,
+                    ),
                   ),
-                ),
               ],
               const Spacer(),
               if (session.location.isNotEmpty)

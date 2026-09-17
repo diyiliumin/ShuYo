@@ -67,11 +67,20 @@ void main() {
       await service.loadAlarmSettings(),
       isA<AcademicScheduleAlarmSettings>()
           .having((settings) => settings.enabled, 'enabled', isFalse)
-          .having((settings) => settings.leadMinutes, 'leadMinutes', 20),
+          .having((settings) => settings.leadMinutes, 'leadMinutes', 20)
+          .having(
+            (settings) => settings.vibrationEnabled,
+            'vibrationEnabled',
+            isFalse,
+          ),
     );
 
     await service.saveAlarmSettings(
-      const AcademicScheduleAlarmSettings(enabled: true, leadMinutes: 20),
+      const AcademicScheduleAlarmSettings(
+        enabled: true,
+        leadMinutes: 20,
+        vibrationEnabled: true,
+      ),
     );
     final count = await service.syncEarlyClassAlarms(
       now: DateTime.utc(2026, 8, 30, 21),
@@ -79,6 +88,10 @@ void main() {
 
     expect(count, 2);
     expect(syncedAlarms.map((alarm) => alarm['title']), ['高等数学', '大学英语']);
+    expect(
+      syncedAlarms.map((alarm) => alarm['vibrationEnabled']),
+      everyElement(isTrue),
+    );
     expect(
       syncedAlarms.map(
         (alarm) => DateTime.fromMillisecondsSinceEpoch(
@@ -146,13 +159,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('早课闹钟'), findsOneWidget);
-      expect(find.text('闹钟提前时间'), findsNothing);
+      expect(find.text('提前时间'), findsNothing);
 
       await tester.tap(find.text('早课闹钟'));
       await tester.pumpAndSettle();
 
-      expect(find.text('闹钟提前时间'), findsOneWidget);
+      expect(find.text('提前时间'), findsOneWidget);
       expect(find.text('20 分钟'), findsOneWidget);
+      expect(find.text('开启震动'), findsOneWidget);
+
+      await tester.tap(find.text('开启震动'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('20 分钟'));
       await tester.pumpAndSettle();

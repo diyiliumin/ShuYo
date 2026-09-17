@@ -17,6 +17,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingExactAlarmResult: MethodChannel.Result? = null
+    private var pendingAlarmRingtoneResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -65,6 +66,8 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "isAvailable" -> result.success(EarlyClassAlarmScheduler.isAvailable(this))
                 "requestAuthorization" -> requestExactAlarmAuthorization(result)
+                "getRingtone" -> result.success(EarlyClassAlarmScheduler.getRingtone(this))
+                "pickRingtone" -> pickAlarmRingtone(result)
                 "sync" -> {
                     val alarms = call.argument<List<Map<String, Any?>>>("alarms") ?: emptyList()
                     result.success(EarlyClassAlarmScheduler.sync(this, alarms))
@@ -76,12 +79,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        val result = pendingExactAlarmResult ?: return
-        val manager = getSystemService(android.app.AlarmManager::class.java)
-        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            manager.canScheduleExactAlarms()
-        pendingExactAlarmResult = null
-        result.success(allowed)
+        pendingExactAlarmResult?.let { result ->
+            val manager = getSystemService(android.app.AlarmManager::class.java)
+            val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                manager.canScheduleExactAlarms()
+            pendingExactAlarmResult = null
+            result.success(allowed)
+        }
+        EarlyClassAlarmService.activeAlarmIntent(this)?.let(::startActivity)
     }
 
     private fun requestExactAlarmAuthorization(result: MethodChannel.Result) {
@@ -135,6 +140,34 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_ALARM_RINGTONE) {
+            val result = pendingAlarmRingtoneResult ?: return
+            pendingAlarmRingtoneResult = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                result.success(null)
+                return
+            }
+            val uri = data.data!!
+            try {
+                val takeFlags = data.flags and
+                    (Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                if (takeFlags != 0) {
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                }
+            } catch (_: SecurityException) {
+                // Some document providers do not offer persistable permissions.
+                // The selected URI can still be used for the current installation.
+            }
+            val name = displayName(uri, "自定义铃声")
+            getSharedPreferences(EarlyClassAlarmScheduler.PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(EarlyClassAlarmScheduler.RINGTONE_URI_KEY, uri.toString())
+                .putString(EarlyClassAlarmScheduler.RINGTONE_NAME_KEY, name)
+                .apply()
+            result.success(mapOf("name" to name))
+            return
+        }
         if (requestCode != REQUEST_PICK_IMAGE) {
             return
         }
@@ -163,7 +196,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun displayName(uri: Uri): String {
+    private fun displayName(uri: Uri, fallback: String = "image.jpg"): String {
         var cursor: Cursor? = null
         try {
             cursor = contentResolver.query(uri, null, null, null, null)
@@ -176,7 +209,7 @@ class MainActivity : FlutterActivity() {
         } finally {
             cursor?.close()
         }
-        return "image.jpg"
+        return fallback
     }
 
     private fun saveImage(
@@ -225,6 +258,30 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun pickAlarmRingtone(result: MethodChannel.Result) {
+        if (pendingAlarmRingtoneResult != null) {
+            result.error("busy", "Ringtone picker is already open", null)
+            return
+        }
+        pendingAlarmRingtoneResult = result
+        try {
+            startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "audio/*"
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+                    )
+                },
+                REQUEST_PICK_ALARM_RINGTONE,
+            )
+        } catch (error: Exception) {
+            pendingAlarmRingtoneResult = null
+            result.error("picker_unavailable", error.message, null)
+        }
+    }
+
     private fun loadEmojiRecents(): List<String> {
         val raw = getPreferences(MODE_PRIVATE).getString(KEY_EMOJI_RECENTS, "") ?: ""
         if (raw.isBlank()) {
@@ -245,6 +302,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_PICK_IMAGE = 9101
+        private const val REQUEST_PICK_ALARM_RINGTONE = 9102
         private const val KEY_EMOJI_RECENTS = "emoji_recents"
     }
 }
