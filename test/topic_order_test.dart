@@ -63,19 +63,23 @@ void main() {
 
   testWidgets('restoring a hidden reply expands its thread', (tester) async {
     SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final posts = [
-      _post(1, 'floor one', topicId: 11),
-      _post(2, 'floor two', topicId: 11),
-      _post(3, 'floor three', replyTo: 2, topicId: 11),
-      _post(4, 'floor four', replyTo: 2, topicId: 11),
-      _post(5, 'floor five', replyTo: 2, topicId: 11),
+      for (var number = 1; number <= 22; number++)
+        _post(number, 'floor $number', topicId: 11),
+      _post(23, 'floor 23', replyTo: 22, topicId: 11),
+      _post(24, 'floor 24', replyTo: 22, topicId: 11),
+      _post(25, 'floor 25', replyTo: 22, topicId: 11),
     ];
     final detail = TopicDetail(
       id: 11,
       title: '位置恢复测试',
       categoryId: 1,
       postsCount: posts.length,
-      highestPostNumber: 5,
+      highestPostNumber: 25,
       canCreatePost: false,
       canDelete: false,
       posts: posts,
@@ -87,20 +91,67 @@ void main() {
     await ForumReadPositionStore.save(
       key,
       120,
-      anchorPostNumber: 5,
+      anchorPostNumber: 25,
     );
 
     await tester.pumpWidget(_app(detail));
-    await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
+    for (var index = 0; index < 12; index++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     expect(find.text('收起回复'), findsOneWidget);
-    expect(find.text('#5'), findsOneWidget);
+    final target = find.text('#25');
+    expect(target, findsOneWidget);
+    expect(
+      tester.getRect(target).overlaps(
+            tester.getRect(find.byType(ListView).first),
+          ),
+      isTrue,
+    );
+  });
+
+  testWidgets('notification target still locates a distant hidden reply',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final posts = [
+      for (var number = 1; number <= 22; number++)
+        _post(number, 'floor $number', topicId: 12),
+      _post(23, 'floor 23', replyTo: 22, topicId: 12),
+      _post(24, 'floor 24', replyTo: 22, topicId: 12),
+      _post(25, 'floor 25', replyTo: 22, topicId: 12),
+    ];
+    final detail = TopicDetail(
+      id: 12,
+      title: '通知定位测试',
+      categoryId: 1,
+      postsCount: posts.length,
+      highestPostNumber: 25,
+      canCreatePost: false,
+      canDelete: false,
+      posts: posts,
+    );
+
+    await tester.pumpWidget(_app(detail, targetPostNumber: 25));
+    for (var index = 0; index < 12; index++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final target = find.text('#25');
+    expect(target, findsOneWidget);
+    expect(
+      tester.getRect(target).overlaps(
+            tester.getRect(find.byType(ListView).first),
+          ),
+      isTrue,
+    );
   });
 }
 
-Widget _app(TopicDetail detail) {
+Widget _app(TopicDetail detail, {int? targetPostNumber}) {
   return MaterialApp(
     theme: ShuYoThemes.byId(ShuYoThemes.defaultId).themeData(),
     home: Scaffold(
@@ -117,6 +168,7 @@ Widget _app(TopicDetail detail) {
           posters: const [],
         ),
         detail: detail,
+        targetPostNumber: targetPostNumber,
         category: null,
         currentUsername: 'tester',
         isOnline: true,

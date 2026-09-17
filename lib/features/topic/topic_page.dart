@@ -439,35 +439,57 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
     _restoringReadPosition = false;
     _cancelTargetPostScrollCorrection = false;
     _startTargetPostScroll(postNumber);
-    _expandParentForPost(postNumber);
-    var scrolled = false;
     try {
-      for (var attempt = 0; attempt < _targetPostScrollAttempts; attempt++) {
-        if (_cancelTargetPostScrollCorrection) {
-          return;
-        }
-        await (attempt == 0
-            ? WidgetsBinding.instance.endOfFrame
-            : Future<void>.delayed(_targetPostScrollStep));
-        if (!mounted || !_scrollController.hasClients) {
-          return;
-        }
-        if (await _ensurePostVisible(postNumber)) {
-          scrolled = true;
-          continue;
-        }
-        await _preScrollTargetIntoBuildRange(postNumber, attempt);
-      }
-      if (!scrolled && await _ensurePostVisible(postNumber)) {
-        scrolled = true;
-      }
+      final scrolled = await _locatePost(
+        postNumber,
+        isCancelled: () => _cancelTargetPostScrollCorrection,
+      );
       if (scrolled) {
         unawaited(_saveReadPositionNow());
-        return;
       }
     } finally {
       _finishTargetPostScroll(postNumber);
     }
+  }
+
+  Future<bool> _locatePost(
+    int postNumber, {
+    double? anchorDelta,
+    required bool Function() isCancelled,
+  }) async {
+    _expandParentForPost(postNumber);
+    var located = false;
+    for (var attempt = 0; attempt < _targetPostScrollAttempts; attempt++) {
+      if (isCancelled()) {
+        return false;
+      }
+      await (attempt == 0
+          ? WidgetsBinding.instance.endOfFrame
+          : Future<void>.delayed(_targetPostScrollStep));
+      if (!mounted || !_scrollController.hasClients || isCancelled()) {
+        return false;
+      }
+      final positioned = anchorDelta == null
+          ? await _ensurePostVisible(postNumber)
+          : _jumpToPostAnchor(postNumber, anchorDelta);
+      if (positioned) {
+        located = true;
+        continue;
+      }
+      await _preScrollTargetIntoBuildRange(postNumber, attempt);
+    }
+    if (located || isCancelled()) {
+      return located;
+    }
+    if (anchorDelta == null) {
+      return _ensurePostVisible(postNumber);
+    }
+    return _jumpToPostAnchor(postNumber, anchorDelta);
+  }
+
+  bool _jumpToPostAnchor(int postNumber, double anchorDelta) {
+    final target = _targetOffsetForPostAnchor(postNumber, anchorDelta);
+    return target != null && _jumpToReadOffset(target);
   }
 
   Future<bool> _ensurePostVisible(int postNumber) async {
@@ -846,32 +868,66 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
         !_scrollController.hasClients) {
       return;
     }
-    final anchorPostNumber = position.anchorPostNumber;
-    if (anchorPostNumber != null) {
-      _expandParentForPost(anchorPostNumber);
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted ||
-          key != _readPositionKey ||
-          !_scrollController.hasClients) {
-        return;
-      }
-    }
-    final maxScrollExtent = _scrollController.position.maxScrollExtent;
-    if (!_hasRestorableReadPosition(position, maxScrollExtent)) {
-      return;
-    }
     _cancelReadPositionCorrection = false;
     _restoringReadPosition = true;
-    final restored = _applyRestoredReadPosition(
-      position,
-      allowOffsetFallback: true,
-    );
+    final savedAnchorPostNumber = position.anchorPostNumber;
+    final anchorPostNumber =
+        !_isBottomReadPosition(position) && savedAnchorPostNumber != null
+            ? _nearestRestorablePostNumber(savedAnchorPostNumber)
+            : null;
+    final bool restored;
+    if (anchorPostNumber != null) {
+      restored = await _locatePost(
+        anchorPostNumber,
+        anchorDelta: position.anchorDelta,
+        isCancelled: () => _cancelReadPositionCorrection,
+      );
+    } else {
+      final maxScrollExtent = _scrollController.position.maxScrollExtent;
+      if (!_hasRestorableReadPosition(position, maxScrollExtent)) {
+        _restoringReadPosition = false;
+        return;
+      }
+      restored = _applyRestoredReadPosition(
+        position,
+        allowOffsetFallback: savedAnchorPostNumber == null,
+      );
+    }
     if (!restored) {
       _restoringReadPosition = false;
       return;
     }
     _showRestoredReadPositionToast();
-    unawaited(_stabilizeReadPositionRestore(key, position));
+    unawaited(
+      _stabilizeReadPositionRestore(
+        key,
+        position,
+        anchorPostNumber: anchorPostNumber,
+      ),
+    );
+  }
+
+  int? _nearestRestorablePostNumber(int requestedPostNumber) {
+    final posts = widget.detail?.posts
+        .where((post) => !post.isDeleted)
+        .toList(growable: false);
+    if (posts == null || posts.isEmpty) {
+      return null;
+    }
+    if (posts.any((post) => post.postNumber == requestedPostNumber)) {
+      return requestedPostNumber;
+    }
+    return posts.reduce((closest, candidate) {
+      final closestDistance = (closest.postNumber - requestedPostNumber).abs();
+      final candidateDistance =
+          (candidate.postNumber - requestedPostNumber).abs();
+      if (candidateDistance < closestDistance ||
+          (candidateDistance == closestDistance &&
+              candidate.postNumber > closest.postNumber)) {
+        return candidate;
+      }
+      return closest;
+    }).postNumber;
   }
 
   bool _hasRestorableReadPosition(
@@ -892,8 +948,9 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
 
   Future<void> _stabilizeReadPositionRestore(
     String key,
-    ForumReadPosition position,
-  ) async {
+    ForumReadPosition position, {
+    int? anchorPostNumber,
+  }) async {
     try {
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted ||
@@ -905,14 +962,22 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
         await _keepRestoredReadPositionAtBottom(key);
         return;
       }
-      _applyRestoredReadPosition(position, allowOffsetFallback: false);
+      _applyRestoredReadPosition(
+        position,
+        allowOffsetFallback: false,
+        anchorPostNumber: anchorPostNumber,
+      );
       await Future<void>.delayed(_readPositionLateCorrectionDelay);
       if (!mounted ||
           key != _readPositionKey ||
           _cancelReadPositionCorrection) {
         return;
       }
-      _applyRestoredReadPosition(position, allowOffsetFallback: false);
+      _applyRestoredReadPosition(
+        position,
+        allowOffsetFallback: false,
+        anchorPostNumber: anchorPostNumber,
+      );
     } finally {
       if (mounted && key == _readPositionKey) {
         _restoringReadPosition = false;
@@ -944,6 +1009,7 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
   bool _applyRestoredReadPosition(
     ForumReadPosition position, {
     required bool allowOffsetFallback,
+    int? anchorPostNumber,
   }) {
     if (!mounted || !_scrollController.hasClients) {
       return false;
@@ -951,10 +1017,10 @@ class _TopicPageState extends State<TopicPage> with WidgetsBindingObserver {
     if (_isBottomReadPosition(position)) {
       return _jumpToReadOffset(_scrollController.position.maxScrollExtent);
     }
-    final anchorPostNumber = position.anchorPostNumber;
-    if (anchorPostNumber != null) {
+    final targetPostNumber = anchorPostNumber ?? position.anchorPostNumber;
+    if (targetPostNumber != null) {
       final anchorTarget = _targetOffsetForPostAnchor(
-        anchorPostNumber,
+        targetPostNumber,
         position.anchorDelta,
       );
       if (anchorTarget != null) {
