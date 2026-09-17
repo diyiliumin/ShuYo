@@ -1401,6 +1401,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _resetFeedFuture({bool forceRefresh = false}) {
     final query = _feedQuery;
+    final cachedTopics = _repo.cachedTopicFeed(query);
+    if (cachedTopics != null) {
+      _feedSnapshots[query.key] = cachedTopics;
+    }
     _feedFuture = _cacheFeedFuture(
       query.key,
       _repo.fetchTopicFeed(
@@ -1590,13 +1594,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       );
       _ensureForumRecoveryCurrent(generation);
       if (mounted) {
+        final previousRepository = _repo;
+        final sameAccount = previousRepository.hasLocalAccount &&
+            nextRepository.hasLocalAccount &&
+            previousRepository.profile.username.toLowerCase() ==
+                nextRepository.profile.username.toLowerCase();
         setState(() {
           _repo = nextRepository;
           _activityCountsFuture = null;
-          _clearFeedSnapshots();
-          _resetFeedFuture(forceRefresh: true);
+          if (!sameAccount) {
+            _clearFeedSnapshots();
+          }
+          _resetFeedFuture();
         });
         unawaited(_loadLocalForumBadges());
+        unawaited(_refreshRecoveredProfile(nextRepository));
       }
       return ForumRecoveryResult(
         status: ForumRecoveryStatus.restored,
@@ -1638,6 +1650,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _syncOnboardingAccountStatus();
       }
     }
+  }
+
+  Future<void> _refreshRecoveredProfile(ForumRepository repository) async {
+    try {
+      await Future.wait<Object>([
+        repository.fetchCurrentUserProfile(),
+        repository.fetchUserSummary(repository.profile.username),
+      ]);
+    } on Object {
+      // 缓存资料已经可用；后台刷新失败不应清空或打扰当前页面。
+    }
+    if (!mounted || !identical(_repo, repository)) {
+      return;
+    }
+    setState(() {});
   }
 
   Future<WebVpnSessionStatus> _validateWebVpnSessionForForum() async {
