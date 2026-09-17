@@ -899,6 +899,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           activityCountsFuture: _profileActivityCountsFuture,
           onOpenActivity: (kind) => unawaited(_openProfileActivity(kind)),
           onOpenDrafts: () => unawaited(_openDraftBox()),
+          onLoginRequired: _returnToHomeTab,
         ),
       ],
     );
@@ -907,11 +908,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget _loggedOutForumTab(Widget child) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (mounted && _tabIndex != 0) setState(() => _tabIndex = 0);
-      },
+      onTap: _returnToHomeTab,
       child: child,
     );
+  }
+
+  void _returnToHomeTab() {
+    if (mounted && _tabIndex != 0) {
+      setState(() => _tabIndex = 0);
+    }
   }
 
   Future<ForumActivityCounts>? get _profileActivityCountsFuture {
