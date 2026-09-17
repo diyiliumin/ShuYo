@@ -106,7 +106,6 @@ class EarlyClassAlarmActivity : Activity() {
                 getColorCompat(R.color.alarm_surface),
                 dp(24).toFloat(),
             )
-            elevation = dp(3).toFloat()
         }
         content.addView(
             card,
