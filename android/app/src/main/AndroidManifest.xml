@@ -47,7 +47,8 @@
             android:name=".EarlyClassAlarmActivity"
             android:exported="false"
             android:showWhenLocked="true"
-            android:turnScreenOn="true" />
+            android:turnScreenOn="true"
+            android:theme="@style/EarlyClassAlarmTheme" />
         <service
             android:name=".EarlyClassAlarmService"
             android:exported="false"

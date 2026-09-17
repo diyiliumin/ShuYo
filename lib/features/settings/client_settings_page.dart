@@ -1046,6 +1046,8 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
   bool _alarmsSupported = false;
   AcademicScheduleAlarmSettings? _alarmSettings;
   bool _savingAlarm = false;
+  String? _alarmRingtoneName;
+  bool _pickingAlarmRingtone = false;
 
   @override
   void initState() {
@@ -1106,7 +1108,7 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
                 ),
                 if (alarmSettings.enabled)
                   ListTile(
-                    title: const Text('闹钟提前时间'),
+                    title: const Text('提前时间'),
                     trailing: Padding(
                       padding: const EdgeInsets.only(right: 7),
                       child: Text('${alarmSettings.leadMinutes} 分钟'),
@@ -1115,6 +1117,25 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
                     onTap: _savingAlarm
                         ? null
                         : () => _editAlarmLeadMinutes(alarmSettings),
+                  ),
+                if (alarmSettings.enabled &&
+                    widget.scheduleNotificationService
+                        .supportsAlarmRingtoneCustomization)
+                  ListTile(
+                    title: const Text('闹钟铃声'),
+                    subtitle: Text(
+                      _alarmRingtoneName ?? '默认',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: _pickingAlarmRingtone
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    enabled: !_savingAlarm && !_pickingAlarmRingtone,
+                    onTap: _pickAlarmRingtone,
                   ),
               ],
             ],
@@ -1139,10 +1160,14 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
             enabled: false,
             leadMinutes: 20,
           );
+    final ringtoneName = supported
+        ? await widget.scheduleNotificationService.loadAlarmRingtoneName()
+        : null;
     if (!mounted) return;
     setState(() {
       _alarmsSupported = supported;
       _alarmSettings = settings;
+      _alarmRingtoneName = ringtoneName;
     });
   }
 
@@ -1222,7 +1247,7 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
     final value = await showDialog<int>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('设置闹钟提前时间'),
+        title: const Text('提前时间'),
         content: Form(
           key: formKey,
           child: TextFormField(
@@ -1263,6 +1288,29 @@ class _NotificationSettingsPageState extends State<_NotificationSettingsPage> {
     );
     if (value != null && mounted) {
       await _saveAlarm(settings.copyWith(leadMinutes: value));
+    }
+  }
+
+  Future<void> _pickAlarmRingtone() async {
+    if (_pickingAlarmRingtone || _savingAlarm) {
+      return;
+    }
+    setState(() => _pickingAlarmRingtone = true);
+    try {
+      final name = await widget.scheduleNotificationService.pickAlarmRingtone();
+      if (!mounted || name == null) {
+        return;
+      }
+      setState(() => _alarmRingtoneName = name);
+      _showSnack(context, '闹钟铃声已设置为$name');
+    } on Object catch (error) {
+      if (mounted) {
+        _showSnack(context, '选择闹钟铃声失败：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _pickingAlarmRingtone = false);
+      }
     }
   }
 }

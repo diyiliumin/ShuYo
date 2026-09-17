@@ -977,6 +977,9 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
     final alarmInitial = alarmsSupported
         ? await widget.notificationService.loadAlarmSettings()
         : const AcademicScheduleAlarmSettings(enabled: false, leadMinutes: 20);
+    final alarmRingtoneName = alarmsSupported
+        ? await widget.notificationService.loadAlarmRingtoneName()
+        : null;
     if (!mounted) {
       return;
     }
@@ -989,6 +992,8 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
         initial: initial,
         alarmsSupported: alarmsSupported,
         alarmInitial: alarmInitial,
+        notificationService: widget.notificationService,
+        alarmRingtoneName: alarmRingtoneName,
       ),
     );
     if (!mounted || next == null) {
@@ -1065,7 +1070,9 @@ class _AcademicSchedulePageState extends State<AcademicSchedulePage> {
       } else if (initialAlarm == null ||
           initialAlarm.enabled != savedAlarm.enabled ||
           (savedAlarm.enabled &&
-              initialAlarm.leadMinutes != savedAlarm.leadMinutes)) {
+              (initialAlarm.leadMinutes != savedAlarm.leadMinutes ||
+                  initialAlarm.vibrationEnabled !=
+                      savedAlarm.vibrationEnabled))) {
         messages.add(
           savedAlarm.enabled
               ? '早课闹钟已开启，提前 ${savedAlarm.leadMinutes} 分钟响铃'
@@ -1565,11 +1572,15 @@ class _NotificationSettingsSheet extends StatefulWidget {
     required this.initial,
     required this.alarmsSupported,
     required this.alarmInitial,
+    required this.notificationService,
+    required this.alarmRingtoneName,
   });
 
   final AcademicScheduleNotificationSettings initial;
   final bool alarmsSupported;
   final AcademicScheduleAlarmSettings alarmInitial;
+  final AcademicScheduleNotificationService notificationService;
+  final String? alarmRingtoneName;
 
   @override
   State<_NotificationSettingsSheet> createState() =>
@@ -1582,6 +1593,9 @@ class _NotificationSettingsSheetState
   late int _leadMinutes;
   late bool _alarmEnabled;
   late int _alarmLeadMinutes;
+  late bool _alarmVibrationEnabled;
+  late String? _alarmRingtoneName;
+  bool _pickingAlarmRingtone = false;
 
   @override
   void initState() {
@@ -1590,6 +1604,8 @@ class _NotificationSettingsSheetState
     _leadMinutes = widget.initial.leadMinutes;
     _alarmEnabled = widget.alarmInitial.enabled;
     _alarmLeadMinutes = widget.alarmInitial.leadMinutes;
+    _alarmVibrationEnabled = widget.alarmInitial.vibrationEnabled;
+    _alarmRingtoneName = widget.alarmRingtoneName;
   }
 
   @override
@@ -1672,7 +1688,7 @@ class _NotificationSettingsSheetState
               DropdownButtonFormField<int>(
                 initialValue: _leadMinutes,
                 decoration: const InputDecoration(
-                  labelText: '提前多久提醒',
+                  labelText: '提前时间',
                   border: OutlineInputBorder(),
                 ),
                 items: [
@@ -1700,7 +1716,7 @@ class _NotificationSettingsSheetState
                 DropdownButtonFormField<int>(
                   initialValue: _alarmLeadMinutes,
                   decoration: const InputDecoration(
-                    labelText: '闹钟提前时间',
+                    labelText: '提前时间',
                     border: OutlineInputBorder(),
                   ),
                   items: [
@@ -1715,6 +1731,34 @@ class _NotificationSettingsSheetState
                       setState(() => _alarmLeadMinutes = value);
                     }
                   },
+                ),
+              if (_alarmEnabled)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('开启震动'),
+                  value: _alarmVibrationEnabled,
+                  onChanged: (value) =>
+                      setState(() => _alarmVibrationEnabled = value),
+                ),
+              if (_alarmEnabled &&
+                  widget.notificationService
+                      .supportsAlarmRingtoneCustomization)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('闹钟铃声'),
+                  subtitle: Text(
+                    _alarmRingtoneName ?? '默认',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: _pickingAlarmRingtone
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  enabled: !_pickingAlarmRingtone,
+                  onTap: _pickAlarmRingtone,
                 ),
             ],
             const SizedBox(height: 16),
@@ -1732,6 +1776,7 @@ class _NotificationSettingsSheetState
                           ? AcademicScheduleAlarmSettings(
                               enabled: _alarmEnabled,
                               leadMinutes: _alarmLeadMinutes,
+                              vibrationEnabled: _alarmVibrationEnabled,
                             )
                           : null,
                     ),
@@ -1762,6 +1807,24 @@ class _NotificationSettingsSheetState
         ],
       ),
     );
+  }
+
+  Future<void> _pickAlarmRingtone() async {
+    if (_pickingAlarmRingtone) {
+      return;
+    }
+    setState(() => _pickingAlarmRingtone = true);
+    try {
+      final name = await widget.notificationService.pickAlarmRingtone();
+      if (!mounted || name == null) {
+        return;
+      }
+      setState(() => _alarmRingtoneName = name);
+    } finally {
+      if (mounted) {
+        setState(() => _pickingAlarmRingtone = false);
+      }
+    }
   }
 }
 

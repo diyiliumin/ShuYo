@@ -185,7 +185,7 @@ void main() {
 
     await tester.tap(find.text('上大校园账户'));
     await tester.pumpAndSettle();
-    expect(find.text('退出上大校园账户？'), findsOneWidget);
+    expect(find.text('退出校园账户'), findsOneWidget);
     expect(academicLogoutCalls, 0);
     await tester.tap(find.widgetWithText(FilledButton, '退出'));
     await tester.pumpAndSettle();
@@ -201,7 +201,7 @@ void main() {
     expect(academicTile.enabled, isFalse);
     await tester.tap(find.text('乐乎账户'));
     await tester.pumpAndSettle();
-    expect(find.text('退出乐乎论坛账户？'), findsOneWidget);
+    expect(find.text('退出乐乎论坛账户'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, '退出'));
     await tester.pumpAndSettle();
     expect(forumLogoutCalls, 1);
@@ -210,7 +210,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('WebVPN'));
     await tester.pumpAndSettle();
-    expect(find.text('退出WebVPN？'), findsOneWidget);
+    expect(find.text('退出WebVPN'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, '退出'));
     await tester.pumpAndSettle();
     expect(webVpnLogoutCalls, 1);

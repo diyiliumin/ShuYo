@@ -9,12 +9,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object EarlyClassAlarmScheduler {
-    private const val PREFS = "early_class_alarms"
+    const val PREFS = "early_class_alarms"
     private const val KEY = "alarms"
     private const val ACTION = "work.shuyo.app.EARLY_CLASS_ALARM"
+    const val RINGTONE_URI_KEY = "ringtone_uri"
+    const val RINGTONE_NAME_KEY = "ringtone_name"
 
     fun isAvailable(context: Context): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+    }
+
+    fun getRingtone(context: Context): Map<String, String>? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val uri = prefs.getString(RINGTONE_URI_KEY, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return mapOf(
+            "uri" to uri,
+            "name" to (prefs.getString(RINGTONE_NAME_KEY, null) ?: "自定义铃声"),
+        )
     }
 
     fun sync(context: Context, raw: List<Map<String, Any?>>): Int {
@@ -38,6 +50,12 @@ object EarlyClassAlarmScheduler {
                 val id = item["id"]?.toString() ?: "alarm-$index-$time"
                 val title = item["title"]?.toString() ?: "早课提醒"
                 val courseTime = (item["courseTime"] as? Number)?.toLong() ?: time
+                val courseEndTime = (item["courseEndTime"] as? Number)?.toLong() ?: 0L
+                val sectionText = item["sectionText"]?.toString().orEmpty()
+                val campus = item["campus"]?.toString().orEmpty()
+                val location = item["location"]?.toString().orEmpty()
+                val teacherName = item["teacherName"]?.toString().orEmpty()
+                val vibrationEnabled = item["vibrationEnabled"] as? Boolean ?: false
                 val requestCode = id.hashCode()
                 schedule(
                     context = context,
@@ -47,6 +65,12 @@ object EarlyClassAlarmScheduler {
                     id = id,
                     title = title,
                     courseTime = courseTime,
+                    courseEndTime = courseEndTime,
+                    sectionText = sectionText,
+                    campus = campus,
+                    location = location,
+                    teacherName = teacherName,
+                    vibrationEnabled = vibrationEnabled,
                 )
                 saved.put(JSONObject().apply {
                     put("requestCode", requestCode)
@@ -54,6 +78,12 @@ object EarlyClassAlarmScheduler {
                     put("fireTime", time)
                     put("title", title)
                     put("courseTime", courseTime)
+                    put("courseEndTime", courseEndTime)
+                    put("sectionText", sectionText)
+                    put("campus", campus)
+                    put("location", location)
+                    put("teacherName", teacherName)
+                    put("vibrationEnabled", vibrationEnabled)
                 })
             }
             save(context, saved)
@@ -86,6 +116,12 @@ object EarlyClassAlarmScheduler {
                 val id = item.optString("id", "alarm-$index-$fireTime")
                 val title = item.optString("title", "早课提醒")
                 val courseTime = item.optLong("courseTime", fireTime)
+                val courseEndTime = item.optLong("courseEndTime", 0L)
+                val sectionText = item.optString("sectionText", "")
+                val campus = item.optString("campus", "")
+                val location = item.optString("location", "")
+                val teacherName = item.optString("teacherName", "")
+                val vibrationEnabled = item.optBoolean("vibrationEnabled", false)
                 val requestCode = item.optInt("requestCode", id.hashCode())
                 schedule(
                     context = context,
@@ -95,6 +131,12 @@ object EarlyClassAlarmScheduler {
                     id = id,
                     title = title,
                     courseTime = courseTime,
+                    courseEndTime = courseEndTime,
+                    sectionText = sectionText,
+                    campus = campus,
+                    location = location,
+                    teacherName = teacherName,
+                    vibrationEnabled = vibrationEnabled,
                 )
                 active.put(item)
                 restored++
@@ -135,11 +177,24 @@ object EarlyClassAlarmScheduler {
         id: String,
         title: String,
         courseTime: Long,
+        courseEndTime: Long,
+        sectionText: String,
+        campus: String,
+        location: String,
+        teacherName: String,
+        vibrationEnabled: Boolean,
     ) {
         val alarmIntent = Intent(context, EarlyClassAlarmReceiver::class.java).apply {
             action = ACTION
             putExtra("title", title)
+            putExtra("fireTime", fireTime)
             putExtra("courseTime", courseTime)
+            putExtra("courseEndTime", courseEndTime)
+            putExtra("sectionText", sectionText)
+            putExtra("campus", campus)
+            putExtra("location", location)
+            putExtra("teacherName", teacherName)
+            putExtra("vibrationEnabled", vibrationEnabled)
             putExtra("alarmId", id)
         }
         val pending = PendingIntent.getBroadcast(
@@ -149,8 +204,15 @@ object EarlyClassAlarmScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val showIntent = Intent(context, EarlyClassAlarmActivity::class.java).apply {
+            putExtra("fireTime", fireTime)
             putExtra("title", title)
             putExtra("courseTime", courseTime)
+            putExtra("courseEndTime", courseEndTime)
+            putExtra("sectionText", sectionText)
+            putExtra("campus", campus)
+            putExtra("location", location)
+            putExtra("teacherName", teacherName)
+            putExtra("vibrationEnabled", vibrationEnabled)
             putExtra("alarmId", id)
         }
         val showPendingIntent = PendingIntent.getActivity(
