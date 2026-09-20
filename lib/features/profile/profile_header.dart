@@ -9,6 +9,8 @@ import '../../shared/widgets/avatar.dart';
 import '../../shared/widgets/forum_network_image.dart';
 
 class ProfileHeader extends StatelessWidget {
+  static const backgroundHeight = 122.0;
+
   const ProfileHeader({
     super.key,
     required this.profile,
@@ -48,7 +50,7 @@ class ProfileHeader extends StatelessWidget {
             left: 0,
             top: 0,
             right: 0,
-            height: 122,
+            height: backgroundHeight,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: _ProfileBackground(
